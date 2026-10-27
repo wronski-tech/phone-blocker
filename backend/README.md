@@ -31,6 +31,30 @@ uv run pytest
 
 Interactive API docs: `/docs`.
 
+## Deploy
+
+`compose.yaml` runs PostgreSQL, the API, and Caddy, which gets a Let's Encrypt certificate
+and redirects HTTP to HTTPS. Any Linux VPS with Docker works (Hetzner, OVH, DigitalOcean…).
+
+1. Point a domain's DNS A/AAAA record at the server and open ports 80 and 443.
+2. On the server:
+
+   ```sh
+   git clone https://github.com/wronski-tech/phone-blocker.git && cd phone-blocker/backend
+   cp .env.example .env    # set DOMAIN, POSTGRES_PASSWORD, API_TOKEN (openssl rand -hex 32)
+   docker compose up -d --build
+   docker compose run -d --rm api phone-blocker crawl-bip   # first import in the background; takes hours
+   ```
+
+3. Check: `curl https://<DOMAIN>/health` returns `{"status":"ok"}`.
+
+Update with `git pull && docker compose up -d --build`. The database lives in the `db-data`
+volume and survives rebuilds; back it up with
+`docker compose exec db pg_dump -U phone_blocker phone_blocker > backup.sql`.
+
+Run the tests against PostgreSQL with
+`TEST_DATABASE_URL=postgresql+psycopg://user:pass@host:5432/db uv run pytest` (wipes that database).
+
 ## API
 
 | Endpoint                         | Purpose                                           |

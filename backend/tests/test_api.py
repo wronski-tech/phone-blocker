@@ -1,10 +1,14 @@
+import os
+
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
 
 from phone_blocker.api import create_app
 from phone_blocker.bip import Card, CardPhone, save_card
 from phone_blocker.config import Settings
 from phone_blocker.db import make_sessionmaker
+from phone_blocker.models import Base
 
 TOKEN = "secret"
 SPAMMER = "+48 500 100 200"
@@ -14,7 +18,14 @@ CITY_HALL = 48717777777
 
 @pytest.fixture
 def db_url(tmp_path):
-    return f"sqlite:///{tmp_path / 'test.db'}"
+    """SQLite by default; set TEST_DATABASE_URL to run against PostgreSQL (wiped per test)."""
+    url = os.environ.get("TEST_DATABASE_URL")
+    if not url:
+        return f"sqlite:///{tmp_path / 'test.db'}"
+    engine = create_engine(url)
+    Base.metadata.drop_all(engine)
+    engine.dispose()
+    return url
 
 
 @pytest.fixture
