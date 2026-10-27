@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Backend for a personal unwanted-call blocker: public phone directory + spam reports, synced to an iPhone Call Directory extension."
 requires-python = ">=3.11"
 dependencies = [
+    "alembic>=1.14",
     "beautifulsoup4>=4.12",
     "fastapi>=0.115",
     "httpx>=0.27",

@@ -1,16 +1,19 @@
 import argparse
+import logging
 from datetime import timedelta
 
 import httpx
 
 from . import bip
 from .config import Settings
-from .db import make_sessionmaker
+from .db import make_sessionmaker, migrate
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(prog="phone-blocker")
     commands = parser.add_subparsers(dest="command", required=True)
+
+    commands.add_parser("migrate", help="Create or upgrade the database schema")
 
     crawl = commands.add_parser("crawl-bip", help="Import all public institutions from gov.pl BIP")
     crawl.add_argument("--limit", type=int, help="Stop after saving this many cards")
@@ -22,6 +25,10 @@ def main() -> None:
 
     args = parser.parse_args()
     settings = Settings.from_env()
+    if args.command == "migrate":
+        logging.basicConfig(level=logging.INFO, format="%(message)s")
+        migrate(settings.database_url)
+        return
     sessions = make_sessionmaker(settings.database_url)
 
     if args.command == "crawl-bip":

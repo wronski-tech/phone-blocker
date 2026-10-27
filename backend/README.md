@@ -16,6 +16,7 @@ Python 3.11+, FastAPI, SQLAlchemy (SQLite by default, PostgreSQL via `DATABASE_U
 
 ```sh
 uv sync
+uv run phone-blocker migrate                   # create or upgrade the schema
 uv run phone-blocker crawl-bip                 # import all BIP institutions (resumable, skips cards newer than 7 days)
 uv run phone-blocker crawl-bip --limit 20      # quick sample
 uv run phone-blocker import-bip-card https://www.gov.pl/web/bip/urzad-miejski-wroclawia-dolnoslaskie-wroclaw-wroclaw
@@ -30,6 +31,20 @@ uv run pytest
 | `BLOCK_THRESHOLD` | `1`                             | Net spam reports needed to block a number       |
 
 Interactive API docs: `/docs`.
+
+## Schema changes
+
+The schema is managed by Alembic; migrations live in
+`src/phone_blocker/migrations/versions/` and ship inside the package.
+
+1. Change `models.py`.
+2. `uv run phone-blocker migrate` (bring your dev database to the latest revision), then
+   `uv run alembic revision --autogenerate -m "describe the change"`.
+3. Review the generated file, then run `uv run phone-blocker migrate` again.
+
+`test_migrations_match_models` fails if a model changes without a migration. The Docker
+container runs `phone-blocker migrate` before starting the API, so deploying applies new
+migrations automatically.
 
 ## Deploy
 
