@@ -1,12 +1,43 @@
-"""Turns listings and reports into the caller-ID label and block flag of each number."""
+"""Stores directory entries and turns listings and reports into each number's caller-ID state."""
 
 import unicodedata
 from collections import Counter
+from dataclasses import dataclass, field
 
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
-from .models import PhoneNumber, SyncState
+from .models import Listing, Organization, PhoneNumber, SyncState, utcnow
+
+
+@dataclass
+class ListedPhone:
+    number: int  # E.164 digits without '+'
+    kind: str  # "phone" or "fax"
+    department: str | None = None
+
+
+@dataclass
+class OrganizationRecord:
+    """An organization as one importer source describes it."""
+
+    source_id: str
+    name: str
+    street: str | None = None
+    postal_code: str | None = None
+    city: str | None = None
+    commune: str | None = None
+    county: str | None = None
+    voivodeship: str | None = None
+    website: str | None = None
+    email: str | None = None
+    nip: str | None = None
+    regon: str | None = None
+    phones: list[ListedPhone] = field(default_factory=list)
+
+
+RECORD_FIELDS = ("name", "street", "postal_code", "city", "commune", "county",
+                 "voivodeship", "website", "email", "nip", "regon")
 
 # Report categories with the Polish wording shown as the caller-ID label.
 SPAM_CATEGORIES = {
@@ -28,6 +59,44 @@ def get_or_create_phone(session: Session, number: int) -> PhoneNumber:
         phone = PhoneNumber(number=number, label=None, blocked=False, version=0)
         session.add(phone)
     return phone
+
+
+def save_record(session: Session, source: str, record: OrganizationRecord, block_threshold: int) -> Organization:
+    """Insert or update an organization and its numbers, then refresh the affected numbers."""
+    org = session.scalar(
+        select(Organization).where(Organization.source == source, Organization.source_id == record.source_id)
+    )
+    if org is None:
+        org = Organization(source=source, source_id=record.source_id)
+        session.add(org)
+
+    for name in RECORD_FIELDS:
+        setattr(org, name, getattr(record, name))
+    departments = dict.fromkeys(p.department for p in record.phones if p.department)
+    org.search_text = fold(" ".join(filter(None, [record.name, record.city, record.commune, *departments])))
+    org.fetched_at = utcnow()
+
+    wanted = list(dict.fromkeys((p.number, p.kind, p.department) for p in record.phones))  # keep source order
+    current = {(l.phone_number.number, l.kind, l.department): l for l in org.listings}
+    affected = {l.phone_number for l in org.listings}  # all of them: the name may have changed
+    for key, listing in current.items():
+        if key not in wanted:
+            org.listings.remove(listing)
+    for number, kind, department in (key for key in wanted if key not in current):
+        phone = get_or_create_phone(session, number)
+        org.listings.append(Listing(phone_number=phone, kind=kind, department=department))
+        affected.add(phone)
+
+    for phone in sorted(affected, key=lambda p: p.number):
+        refresh_number(session, phone, block_threshold)
+    return org
+
+
+def delete_organization(session: Session, org: Organization, block_threshold: int) -> None:
+    phones = sorted({l.phone_number for l in org.listings}, key=lambda p: p.number)
+    session.delete(org)
+    for phone in phones:
+        refresh_number(session, phone, block_threshold)
 
 
 def refresh_number(session: Session, phone: PhoneNumber, block_threshold: int) -> None:

@@ -2,9 +2,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from phone_blocker.api import create_app
-from phone_blocker.bip import Card, CardPhone, save_card
 from phone_blocker.config import Settings
 from phone_blocker.db import make_sessionmaker
+from phone_blocker.directory import ListedPhone, OrganizationRecord, save_record
 
 TOKEN = "secret"
 SPAMMER = "+48 500 100 200"
@@ -20,11 +20,11 @@ def client(db_url):
 
 
 def save_city_hall(db_url, name="Urząd Miejski Wrocławia", phones=None):
-    phones = phones or [CardPhone(CITY_HALL, "phone", None), CardPhone(48717779061, "phone", "Redakcja BIP")]
+    phones = phones or [ListedPhone(CITY_HALL, "phone", None), ListedPhone(48717779061, "phone", "Redakcja BIP")]
     sessions = make_sessionmaker(db_url)
     with sessions.begin() as session:
-        save_card(session, "https://www.gov.pl/web/bip/um-wroclaw",
-                  Card(name=name, city="Wrocław", phones=phones), block_threshold=1)
+        record = OrganizationRecord("https://www.gov.pl/web/bip/um-wroclaw", name, city="Wrocław", phones=phones)
+        save_record(session, "bip", record, block_threshold=1)
 
 
 def directory(client, since=0, **params):
@@ -76,7 +76,7 @@ def test_reimported_card_updates_labels_and_removes_dropped_numbers(client, db_u
     save_city_hall(db_url)
     before = directory(client)
 
-    save_city_hall(db_url, name="Urząd Miejski Wrocławia (UMW)", phones=[CardPhone(CITY_HALL, "phone", None)])
+    save_city_hall(db_url, name="Urząd Miejski Wrocławia (UMW)", phones=[ListedPhone(CITY_HALL, "phone", None)])
 
     delta = {e["number"]: e for e in directory(client, since=before["next_since"])["entries"]}
     assert delta == {

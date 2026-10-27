@@ -2,9 +2,9 @@
 
 Stores two kinds of phone data and serves them to the iPhone app:
 
-- **Public directory ("yellow pages")** – institutions and their published numbers,
-  imported from the Polish BIP register (gov.pl/web/bip). These numbers get a caller-ID
-  label and are never blocked.
+- **Public directory ("yellow pages")** – organizations and their published numbers,
+  imported from public registers (see [Directory sources](#directory-sources)). These numbers
+  get a caller-ID label and are never blocked.
 - **Unwanted calls** – reports (telemarketing, scam, debt collection, …) in the style of
   sprawdzamnumer.pl. A number is blocked once its spam reports minus its "safe" reports reach
   `BLOCK_THRESHOLD`.
@@ -17,8 +17,9 @@ Python 3.11+, FastAPI, SQLAlchemy (SQLite by default, PostgreSQL via `DATABASE_U
 ```sh
 uv sync
 uv run phone-blocker migrate                   # create or upgrade the schema
-uv run phone-blocker crawl-bip                 # import all BIP institutions (resumable, skips cards newer than 7 days)
-uv run phone-blocker crawl-bip --limit 20      # quick sample
+uv run phone-blocker import all                # import every directory source (hours)
+uv run phone-blocker import nfz --limit 20     # quick sample of one source
+uv run phone-blocker runs                      # recent import runs
 uv run phone-blocker import-bip-card https://www.gov.pl/web/bip/urzad-miejski-wroclawia-dolnoslaskie-wroclaw-wroclaw
 API_TOKEN=change-me uv run uvicorn phone_blocker.api:create_app --factory --port 8000
 uv run pytest
@@ -31,6 +32,22 @@ uv run pytest
 | `BLOCK_THRESHOLD` | `1`                             | Net spam reports needed to block a number       |
 
 Interactive API docs: `/docs`.
+
+## Directory sources
+
+| Source | What | How | Full run |
+|--------|------|-----|----------|
+| `bip`  | Public institutions from the BIP register | JSON tree behind gov.pl/web/bip/spis-podmiotow, then each HTML contact card | hours; cards refreshed within `--max-age-days` (7) are skipped |
+| `nfz`  | Clinics and hospital departments with an NFZ contract | Public NFZ "Terminy leczenia" API, grouped per department | about 2 h |
+
+Each run is recorded in `import_runs` (`phone-blocker runs`). After a **complete** run, entries
+the source no longer lists are removed and their numbers lose their label in the next sync.
+Runs stopped by `--limit` or by an error remove nothing, and a run that would remove more
+than 10% of a source's entries removes nothing and says so in the run message.
+
+To add a source, write a module in `src/phone_blocker/sources/` with `DEFAULT_DELAY` and
+`iter_records(ctx, client)` (contract in `sources/__init__.py`), and register it in
+`importer.SOURCES`.
 
 ## Schema changes
 
@@ -48,8 +65,9 @@ migrations automatically.
 
 ## Deploy
 
-`compose.yaml` runs PostgreSQL, the API, and Caddy, which gets a Let's Encrypt certificate
-and redirects HTTP to HTTPS. Any Linux VPS with Docker works (Hetzner, OVH, DigitalOcean…).
+`compose.yaml` runs PostgreSQL, the API, the importer (all directory sources on start, then
+24 h after each round ends), and Caddy, which gets a Let's Encrypt certificate and redirects
+HTTP to HTTPS. Any Linux VPS with Docker works (Hetzner, OVH, DigitalOcean…).
 
 1. Point a domain's DNS A/AAAA record at the server and open ports 80 and 443.
 2. On the server:
@@ -57,11 +75,11 @@ and redirects HTTP to HTTPS. Any Linux VPS with Docker works (Hetzner, OVH, Digi
    ```sh
    git clone https://github.com/wronski-tech/phone-blocker.git && cd phone-blocker/backend
    cp .env.example .env    # set DOMAIN, POSTGRES_PASSWORD, API_TOKEN (openssl rand -hex 32)
-   docker compose up -d --build
-   docker compose run -d --rm api phone-blocker crawl-bip   # first import in the background; takes hours
+   docker compose up -d --build   # the importer starts the first import right away
    ```
 
-3. Check: `curl https://<DOMAIN>/health` returns `{"status":"ok"}`.
+3. Check: `curl https://<DOMAIN>/health` returns `{"status":"ok"}`. Follow the import with
+   `docker compose logs -f importer` and `docker compose exec api phone-blocker runs`.
 
 Update with `git pull && docker compose up -d --build`. The database lives in the `db-data`
 volume and survives rebuilds; back it up with

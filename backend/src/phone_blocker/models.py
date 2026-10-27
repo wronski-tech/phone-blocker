@@ -45,6 +45,7 @@ class Organization(Base):
     """A public institution or business from the "yellow pages" side of the database."""
 
     __tablename__ = "organizations"
+    __table_args__ = (UniqueConstraint("source", "source_id"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(500))
@@ -60,8 +61,8 @@ class Organization(Base):
     regon: Mapped[str | None] = mapped_column(String(20))
     # Lowercase, diacritics folded ("urzad miejski wroclawia wroclaw") for search.
     search_text: Mapped[str] = mapped_column(Text, default="")
-    source: Mapped[str] = mapped_column(String(50))
-    source_url: Mapped[str] = mapped_column(String(1000), unique=True)
+    source: Mapped[str] = mapped_column(String(50))  # importer name, e.g. "bip" or "nfz"
+    source_id: Mapped[str] = mapped_column(String(1000))  # identity within the source, e.g. the BIP card URL
     fetched_at: Mapped[datetime] = mapped_column(default=utcnow, index=True)
 
     listings: Mapped[list["Listing"]] = relationship(
@@ -97,6 +98,22 @@ class Report(Base):
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
 
     phone_number: Mapped[PhoneNumber] = relationship(back_populates="reports")
+
+
+class ImportRun(Base):
+    """One run of a directory importer, for monitoring and debugging."""
+
+    __tablename__ = "import_runs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    source: Mapped[str] = mapped_column(String(50), index=True)
+    started_at: Mapped[datetime] = mapped_column(default=utcnow)
+    finished_at: Mapped[datetime | None]
+    status: Mapped[str] = mapped_column(String(20), default="running")  # running, success, failed
+    saved: Mapped[int] = mapped_column(default=0)
+    removed: Mapped[int] = mapped_column(default=0)
+    errors: Mapped[int] = mapped_column(default=0)
+    message: Mapped[str | None] = mapped_column(Text)
 
 
 class SyncState(Base):

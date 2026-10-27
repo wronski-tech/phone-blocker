@@ -38,7 +38,8 @@ class OrganizationOut(BaseModel):
     email: str | None
     nip: str | None
     regon: str | None
-    source_url: str
+    source: str
+    source_id: str
     phones: list[OrganizationPhoneOut]
 
 
@@ -213,7 +214,8 @@ def organization_out(org: Organization) -> OrganizationOut:
         email=org.email,
         nip=org.nip,
         regon=org.regon,
-        source_url=org.source_url,
+        source=org.source,
+        source_id=org.source_id,
         phones=[
             OrganizationPhoneOut(
                 number=l.phone_number.number,

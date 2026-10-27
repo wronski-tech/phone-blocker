@@ -27,6 +27,20 @@ services:
       db:
         condition: service_healthy
 
+  # Refreshes the public directory from every source, then again 24 h after each round.
+  importer:
+    build: .
+    restart: unless-stopped
+    command: phone-blocker import all --every-hours 24
+    environment:
+      DATABASE_URL: postgresql+psycopg://phone_blocker:${POSTGRES_PASSWORD}@db:5432/phone_blocker
+      BLOCK_THRESHOLD: ${BLOCK_THRESHOLD:-1}
+    healthcheck:
+      disable: true  # the image's check probes the API port
+    depends_on:
+      api:
+        condition: service_healthy  # the api container runs the migrations
+
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
