@@ -4,10 +4,10 @@ import unicodedata
 from collections import Counter
 from dataclasses import dataclass, field
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
-from .models import Listing, Organization, PhoneNumber, SyncState, utcnow
+from .models import Listing, NumberRange, Organization, PhoneNumber, SyncState, utcnow
 
 
 @dataclass
@@ -135,6 +135,19 @@ def _next_version(session: Session) -> int:
     return session.execute(
         update(SyncState).where(SyncState.id == 1).values(version=SyncState.version + 1).returning(SyncState.version)
     ).scalar_one()
+
+
+def find_range(session: Session, number: int) -> NumberRange | None:
+    """The UKE range a Polish number belongs to (longest matching prefix)."""
+    digits = str(number)
+    if not digits.startswith("48"):  # country codes are prefix-free, so this means Poland
+        return None
+    national = digits[2:]
+    prefixes = [national[:i] for i in range(1, len(national) + 1)]
+    return session.scalar(
+        select(NumberRange).where(NumberRange.prefix.in_(prefixes))
+        .order_by(func.length(NumberRange.prefix).desc()).limit(1)
+    )
 
 
 def fold(text: str) -> str:

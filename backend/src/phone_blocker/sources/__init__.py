@@ -5,6 +5,9 @@ Each source module provides `DEFAULT_DELAY` and `iter_records(ctx, client)`, whi
 None when the existing entry should be kept as is: it was refreshed recently, or
 fetching it failed. Every listed id must be yielded, because after a complete run the
 importer removes entries whose id was not seen.
+
+Reference data that is simply replaced on every run (UKE number ranges) provides
+`replace_all(session, client, ctx)` instead, returning the number of rows written.
 """
 
 import time

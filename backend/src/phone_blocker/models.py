@@ -100,6 +100,23 @@ class Report(Base):
     phone_number: Mapped[PhoneNumber] = relationship(back_populates="reports")
 
 
+class NumberRange(Base):
+    """A block of Polish numbers and the operator UKE assigned it to.
+
+    `prefix` is national digits without the 48 country code; prefixes never overlap.
+    """
+
+    __tablename__ = "number_ranges"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    prefix: Mapped[str] = mapped_column(String(15), unique=True)
+    kind: Mapped[str] = mapped_column(String(10))  # landline, mobile, voip, service
+    operator: Mapped[str] = mapped_column(String(300))
+    operator_id: Mapped[int]  # see sources.uke.FIRST_RESERVE_ID
+    zone: Mapped[str | None] = mapped_column(String(100))  # landline numbering zone, e.g. "WROCŁAW"
+    service: Mapped[str | None] = mapped_column(String(300))  # 70x/80x service type
+
+
 class ImportRun(Base):
     """One run of a directory importer, for monitoring and debugging."""
 

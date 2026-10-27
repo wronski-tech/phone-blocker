@@ -11,9 +11,10 @@ from sqlalchemy.orm import Session, selectinload
 
 from .config import Settings
 from .db import make_sessionmaker
-from .directory import REPORT_CATEGORIES, SAFE, fold, get_or_create_phone, refresh_number
+from .directory import REPORT_CATEGORIES, SAFE, find_range, fold, get_or_create_phone, refresh_number
 from .models import Listing, Organization, PhoneNumber, Report
-from .phone import InvalidNumber, format_international, normalize
+from .phone import InvalidNumber, describe, format_international, normalize
+from .sources.uke import FIRST_RESERVE_ID
 
 ReportCategory = Literal[REPORT_CATEGORIES]  # type: ignore[valid-type]
 
@@ -63,11 +64,23 @@ class ReportSummary(BaseModel):
     recent: list[ReportOut]
 
 
+class NumberInfo(BaseModel):
+    type: str = Field(description="mobile, fixed_line, voip, premium_rate, toll_free, shared_cost, … or unknown")
+    region: str | None = Field(description="City for Polish landlines, otherwise the country")
+    operator: str | None = Field(description="Operator UKE assigned the range to; for mobiles the original one")
+    service: str | None = Field(description="Service type of 70x/80x numbers")
+    allocated: bool | None = Field(
+        description="False when UKE has not assigned the range to anyone (caller ID is likely spoofed); "
+                    "None when unknown: foreign numbers, ranges missing from the UKE tables"
+    )
+
+
 class NumberOut(BaseModel):
     number: int
     formatted: str
     label: str | None
     blocked: bool
+    info: NumberInfo
     listings: list[ListingOut]
     reports: ReportSummary
 
@@ -123,7 +136,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         """Who is calling? Unknown but valid numbers return an empty result."""
         value = parse_number(number)
         phone = session.scalar(select(PhoneNumber).where(PhoneNumber.number == value))
-        return number_out(phone or PhoneNumber(number=value, label=None, blocked=False, listings=[], reports=[]))
+        return number_out(session, phone or PhoneNumber(number=value, label=None, blocked=False, listings=[], reports=[]))
 
     @v1.post("/reports", response_model=NumberOut, status_code=201)
     def create_report(body: ReportIn, session: SessionDep) -> NumberOut:
@@ -131,7 +144,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         phone.reports.append(Report(category=body.category, comment=body.comment))
         refresh_number(session, phone, settings.block_threshold)
         session.commit()
-        return number_out(phone)
+        return number_out(session, phone)
 
     @v1.get("/organizations", response_model=list[OrganizationOut])
     def search_organizations(
@@ -175,14 +188,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     return app
 
 
-def number_out(phone: PhoneNumber) -> NumberOut:
+def number_out(session: Session, phone: PhoneNumber) -> NumberOut:
     spam = Counter(r.category for r in phone.reports if r.category != SAFE)
     safe = sum(r.category == SAFE for r in phone.reports)
+    kind, region = describe(phone.number)
+    number_range = find_range(session, phone.number)
+    assigned = number_range is not None and number_range.operator_id < FIRST_RESERVE_ID
     return NumberOut(
         number=phone.number,
         formatted=format_international(phone.number),
         label=phone.label,
         blocked=phone.blocked,
+        info=NumberInfo(
+            type=kind,
+            region=region,
+            operator=number_range.operator if assigned else None,
+            service=number_range.service if number_range else None,
+            allocated=assigned if number_range else None,
+        ),
         listings=[
             ListingOut(kind=l.kind, department=l.department, organization=organization_out(l.organization))
             for l in phone.listings

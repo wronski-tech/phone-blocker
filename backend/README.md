@@ -39,6 +39,7 @@ Interactive API docs: `/docs`.
 |--------|------|-----|----------|
 | `bip`  | Public institutions from the BIP register | JSON tree behind gov.pl/web/bip/spis-podmiotow, then each HTML contact card | hours; cards refreshed within `--max-age-days` (7) are skipped |
 | `nfz`  | Clinics and hospital departments with an NFZ contract | Public NFZ "Terminy leczenia" API, grouped per department | about 2 h |
+| `uke`  | Operator of every Polish number range (landline, mobile, VoIP, 70x/80x) | UKE numbering tables, CSV export from numeracja.uke.gov.pl | seconds; replaces the table each run |
 
 Each run is recorded in `import_runs` (`phone-blocker runs`). After a **complete** run, entries
 the source no longer lists are removed and their numbers lose their label in the next sync.
@@ -92,10 +93,13 @@ Run the tests against PostgreSQL with
 
 | Endpoint                         | Purpose                                           |
 |----------------------------------|---------------------------------------------------|
-| `GET /v1/numbers/{number}`       | Who is calling: label, blocked, listings, reports |
+| `GET /v1/numbers/{number}`       | Who is calling: label, blocked, listings, reports, and `info` (type, city, assigned operator, unallocated range) for any number |
 | `POST /v1/reports`               | Report a call: `{number, category, comment?}`     |
 | `GET /v1/organizations?q=…`      | Search the directory (case and diacritics insensitive) |
 | `GET /v1/directory?since=&limit=`| Sync feed for the Call Directory extension        |
+
+`info` comes from libphonenumber and the UKE tables and is available for every number, but
+only through lookup: the Call Directory extension can only label numbers listed one by one.
 
 Numbers are accepted in any common format (`71 777 77 77`, `+48717777777`, …) and returned
 as E.164 digits without `+` (`48717777777`), which is the `CXCallDirectoryPhoneNumber` format.

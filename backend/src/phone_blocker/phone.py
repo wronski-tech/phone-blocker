@@ -1,6 +1,10 @@
 import phonenumbers
+from phonenumbers import geocoder
 
 REGION = "PL"
+TYPE_NAMES = {
+    value: name.lower() for name, value in vars(phonenumbers.PhoneNumberType).items() if isinstance(value, int)
+}
 
 
 class InvalidNumber(ValueError):
@@ -28,3 +32,11 @@ def to_int(parsed: phonenumbers.PhoneNumber) -> int:
 def format_international(number: int) -> str:
     parsed = phonenumbers.parse(f"+{number}")
     return phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.INTERNATIONAL)
+
+
+def describe(number: int) -> tuple[str, str | None]:
+    """Number type ("mobile", "fixed_line", "voip", "premium_rate", ...) and where it is from:
+    the city for Polish landlines, otherwise the country."""
+    parsed = phonenumbers.parse(f"+{number}")
+    kind = TYPE_NAMES.get(phonenumbers.number_type(parsed), "unknown")
+    return kind, geocoder.description_for_number(parsed, "pl") or None

@@ -11,9 +11,9 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from .directory import delete_organization, save_record
 from .models import ImportRun, Organization, utcnow
-from .sources import USER_AGENT, ImportContext, bip, nfz
+from .sources import USER_AGENT, ImportContext, bip, nfz, uke
 
-SOURCES: dict[str, ModuleType] = {"bip": bip, "nfz": nfz}
+SOURCES: dict[str, ModuleType] = {"uke": uke, "bip": bip, "nfz": nfz}
 
 # A complete run normally drops a handful of entries. If a source suddenly lists far fewer
 # (an upstream outage or format change), keep everything rather than wipe the directory.
@@ -39,25 +39,15 @@ def run_import(
             Organization.source == source, Organization.fetched_at >= utcnow() - max_age,
         )))
     ctx = ImportContext(delay=module.DEFAULT_DELAY if delay is None else delay, log=log, fresh_ids=fresh)
-    seen: set[str] = set()
     log(f"{source}: import started ({len(fresh)} entries fresh)")
 
     try:
         with httpx.Client(headers={"User-Agent": USER_AGENT}, timeout=30, follow_redirects=True) as client:
-            for source_id, record in module.iter_records(ctx, client):
-                seen.add(source_id)
-                if record is None:
-                    continue
+            if hasattr(module, "replace_all"):  # reference data replaced wholesale, e.g. UKE ranges
                 with sessions.begin() as session:
-                    save_record(session, source, record, block_threshold)
-                run.saved += 1
-                if run.saved % 100 == 0:
-                    log(f"{source}: saved {run.saved}")
-                if limit and run.saved >= limit:
-                    run.message = f"Stopped at --limit {limit}; nothing removed"
-                    break
+                    run.saved = module.replace_all(session, client, ctx)
             else:
-                run.removed, run.message = _remove_missing(sessions, source, seen, block_threshold)
+                _import_records(sessions, source, module, ctx, client, run, block_threshold, limit, log)
         run.status = "success"
     except Exception as exc:  # keep the scheduler alive; the run row records what happened
         log(traceback.format_exc())
@@ -71,6 +61,26 @@ def run_import(
     log(f"{source}: {run.status}, saved {run.saved}, removed {run.removed}, errors {run.errors}"
         + (f" ({run.message})" if run.message else ""))
     return run
+
+
+def _import_records(
+    sessions: sessionmaker[Session], source: str, module: ModuleType, ctx: ImportContext, client: httpx.Client,
+    run: ImportRun, block_threshold: int, limit: int | None, log: Callable[[str], None],
+) -> None:
+    seen: set[str] = set()
+    for source_id, record in module.iter_records(ctx, client):
+        seen.add(source_id)
+        if record is None:
+            continue
+        with sessions.begin() as session:
+            save_record(session, source, record, block_threshold)
+        run.saved += 1
+        if run.saved % 100 == 0:
+            log(f"{source}: saved {run.saved}")
+        if limit and run.saved >= limit:
+            run.message = f"Stopped at --limit {limit}; nothing removed"
+            return
+    run.removed, run.message = _remove_missing(sessions, source, seen, block_threshold)
 
 
 def _remove_missing(
