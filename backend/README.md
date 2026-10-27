@@ -27,6 +27,10 @@ API_TOKEN=change-me uv run uvicorn phone_blocker.api:create_app --factory --port
 uv run pytest
 ```
 
+GitHub Actions ([`.github/workflows/backend.yml`](../.github/workflows/backend.yml)) runs the
+tests on SQLite and PostgreSQL and builds and starts the Docker image on every push to `main`
+and every pull request that touches `backend/`.
+
 | Variable          | Default                         | Meaning                                         |
 |-------------------|---------------------------------|-------------------------------------------------|
 | `DATABASE_URL`    | `sqlite:///./phone_blocker.db`  | Any SQLAlchemy URL                              |
