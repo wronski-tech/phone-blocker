@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Search{% endblock %}
+{% block content %}
+<h1>Organizations matching “{{ q }}”</h1>
+{% if q | length < 2 %}<p class="muted">Type a phone number, or at least two letters of a name or city.</p>{% endif %}
+<table>
+  <thead><tr><th>Name</th><th>Address</th><th>Source</th><th>Numbers</th></tr></thead>
+  <tbody>
+  {% for org in organizations %}
+    <tr>
+      <td>{{ org.name }}</td>
+      <td>{{ [org.street, org.city] | select | join(", ") }}</td>
+      <td>{% if org.source_id.startswith('http') %}<a href="{{ org.source_id }}" rel="noreferrer">{{ org.source }}</a>{% else %}{{ org.source }}{% endif %}</td>
+      <td>{% for l in org.listings %}<div class="nowrap"><a href="/admin/numbers/{{ l.phone_number.number }}">{{ l.phone_number.number | phone }}</a>{% if l.kind == 'fax' %} <span class="muted">fax</span>{% endif %}{% if l.department %} <span class="muted">{{ l.department }}</span>{% endif %}</div>{% endfor %}</td>
+    </tr>
+  {% else %}
+    {% if q | length >= 2 %}<tr><td colspan="4" class="muted">Nothing found.</td></tr>{% endif %}
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

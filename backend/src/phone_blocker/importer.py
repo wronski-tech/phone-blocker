@@ -50,11 +50,13 @@ def run_import(
                 _import_records(sessions, source, module, ctx, client, run, block_threshold, limit, log)
         run.status = "success"
     except Exception as exc:  # keep the scheduler alive; the run row records what happened
-        log(traceback.format_exc())
+        ctx.errors.append(traceback.format_exc())
+        log(ctx.errors[-1])
         run.status = "failed"
         run.message = f"{type(exc).__name__}: {exc}"
 
-    run.errors = ctx.errors
+    run.errors = ctx.error_count
+    run.error_log = "\n".join(ctx.errors) or None
     run.finished_at = utcnow()
     with sessions.begin() as session:
         session.merge(run)

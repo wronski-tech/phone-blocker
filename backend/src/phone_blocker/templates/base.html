@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Admin{% endblock %} · Phone Blocker</title>
+<style>
+  :root { --fg: #1f2328; --muted: #656d76; --line: #d0d7de; --bg: #f6f8fa; --accent: #0969da;
+          --ok: #1a7f37; --bad: #cf222e; --warn: #9a6700; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--fg); background: #fff; }
+  header { display: flex; gap: 24px; align-items: center; padding: 10px 24px; border-bottom: 1px solid var(--line); background: var(--bg); flex-wrap: wrap; }
+  header strong { font-size: 15px; }
+  header nav a { margin-right: 16px; color: var(--fg); text-decoration: none; }
+  header nav a:hover { color: var(--accent); }
+  header form { margin-left: auto; display: flex; gap: 6px; }
+  main { max-width: 1100px; margin: 0 auto; padding: 20px 24px 48px; }
+  h1 { font-size: 22px; margin: 0 0 16px; }
+  h2 { font-size: 16px; margin: 28px 0 10px; }
+  a { color: var(--accent); }
+  input[type=text], input[type=search], select { font: inherit; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; }
+  input[type=search] { width: 260px; }
+  button { font: inherit; padding: 5px 12px; border: 1px solid var(--line); border-radius: 6px; background: #fff; cursor: pointer; }
+  button:hover { background: var(--bg); }
+  button.danger { color: var(--bad); }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .03em; }
+  .nowrap { white-space: nowrap; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }
+  .stat { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+  .stat b { display: block; font-size: 20px; font-variant-numeric: tabular-nums; }
+  .stat span { color: var(--muted); font-size: 12px; }
+  .badge { display: inline-block; padding: 0 8px; border-radius: 10px; font-size: 12px; font-weight: 600; border: 1px solid currentColor; }
+  .success, .allowed { color: var(--ok); }
+  .failed, .blocked { color: var(--bad); }
+  .running { color: var(--accent); }
+  .muted { color: var(--muted); }
+  .warn { color: var(--warn); }
+  pre { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 12px; overflow: auto; white-space: pre-wrap; }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 0; }
+  dt { color: var(--muted); }
+  dd { margin: 0; }
+  .card { border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; margin-bottom: 14px; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+<header>
+  <strong>Phone Blocker</strong>
+  <nav><a href="/admin">Dashboard</a><a href="/admin/reports">Reports</a><a href="/docs">API docs</a></nav>
+  <form action="/admin/search"><input type="search" name="q" placeholder="Number or organization" value="{{ q or '' }}" aria-label="Search"><button>Search</button></form>
+</header>
+<main>
+{% block content %}{% endblock %}
+</main>
+</body>
+</html>

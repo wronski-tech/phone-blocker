@@ -97,6 +97,16 @@ def test_directory_pages_by_version(client):
     assert numbers == [48500100200, 48500100201, 48500100202]
 
 
+def test_directory_download_is_gzipped(client):
+    for n in range(30):
+        client.post("/v1/reports", json={"number": f"5001002{n:02d}", "category": "scam"})
+
+    response = client.get("/v1/directory", headers={"Accept-Encoding": "gzip"})
+
+    assert response.headers["content-encoding"] == "gzip"
+    assert len(response.json()["entries"]) == 30
+
+
 def test_search_ignores_case_and_polish_diacritics(client, db_url):
     save_city_hall(db_url)
 

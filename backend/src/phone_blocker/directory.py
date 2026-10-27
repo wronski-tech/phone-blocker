@@ -4,10 +4,10 @@ import unicodedata
 from collections import Counter
 from dataclasses import dataclass, field
 
-from sqlalchemy import func, select, update
-from sqlalchemy.orm import Session
+from sqlalchemy import and_, func, select, update
+from sqlalchemy.orm import Session, selectinload
 
-from .models import Listing, NumberRange, Organization, PhoneNumber, SyncState, utcnow
+from .models import Listing, NumberRange, Organization, PhoneNumber, Report, SyncState, utcnow
 
 
 @dataclass
@@ -100,6 +100,21 @@ def delete_organization(session: Session, org: Organization, block_threshold: in
         refresh_number(session, phone, block_threshold)
 
 
+def set_personal(
+    session: Session, phone: PhoneNumber, action: str | None, label: str | None, block_threshold: int
+) -> None:
+    phone.personal_action = action
+    phone.personal_label = (label or "").strip() or None
+    refresh_number(session, phone, block_threshold)
+
+
+def delete_report(session: Session, report: Report, block_threshold: int) -> PhoneNumber:
+    phone = report.phone_number
+    session.delete(report)
+    refresh_number(session, phone, block_threshold)
+    return phone
+
+
 def refresh_number(session: Session, phone: PhoneNumber, block_threshold: int) -> None:
     """Recompute label/blocked and bump the sync version when they change.
 
@@ -157,6 +172,18 @@ def find_range(session: Session, number: int) -> NumberRange | None:
         select(NumberRange).where(NumberRange.prefix.in_(prefixes))
         .order_by(func.length(NumberRange.prefix).desc()).limit(1)
     )
+
+
+def search_organizations(session: Session, query: str, limit: int) -> list[Organization]:
+    """Organizations whose name, city or departments contain every word of `query`."""
+    words = fold(query).split()
+    return list(session.scalars(
+        select(Organization)
+        .where(and_(*(Organization.search_text.contains(w, autoescape=True) for w in words)))
+        .options(selectinload(Organization.listings).selectinload(Listing.phone_number))
+        .order_by(Organization.name)
+        .limit(limit)
+    ))
 
 
 def fold(text: str) -> str:

@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% from "_macros.html" import reports_table %}
+{% block title %}Reports{% endblock %}
+{% block content %}
+<h1>Reports</h1>
+<p class="muted">The latest 200. Deleting a report undoes its effect on the number's label and blocking.</p>
+{{ reports_table(reports, "/admin/reports") }}
+{% endblock %}

@@ -33,7 +33,8 @@ uv run pytest
 | `API_TOKEN`       | unset (no auth)                 | Required as `Authorization: Bearer <token>` on `/v1` |
 | `BLOCK_THRESHOLD` | `1`                             | Net spam reports needed to block a number       |
 
-Interactive API docs: `/docs`.
+Interactive API docs: `/docs`. Responses over 1 kB are gzip-compressed when the client
+accepts it (the iOS URL session does), which shrinks the full directory download several times.
 
 ## Directory sources
 
@@ -69,8 +70,8 @@ migrations automatically.
 ## Deploy
 
 `compose.yaml` runs PostgreSQL, the API, the importer (all directory sources on start, then
-24 h after each round ends), and Caddy, which gets a Let's Encrypt certificate and redirects
-HTTP to HTTPS. Any Linux VPS with Docker works (Hetzner, OVH, DigitalOcean…).
+24 h after each round ends), daily backups, and Caddy, which gets a Let's Encrypt certificate
+and redirects HTTP to HTTPS. Any Linux VPS with Docker works (Hetzner, OVH, DigitalOcean…).
 
 1. Point a domain's DNS A/AAAA record at the server and open ports 80 and 443.
 2. On the server:
@@ -81,12 +82,31 @@ HTTP to HTTPS. Any Linux VPS with Docker works (Hetzner, OVH, DigitalOcean…).
    docker compose up -d --build   # the importer starts the first import right away
    ```
 
-3. Check: `curl https://<DOMAIN>/health` returns `{"status":"ok"}`. Follow the import with
-   `docker compose logs -f importer` and `docker compose exec api phone-blocker runs`.
+3. Check: `curl https://<DOMAIN>/health` returns `{"status":"ok"}`, then open
+   `https://<DOMAIN>/admin` and log in with any user name and `API_TOKEN` as the password.
 
 Update with `git pull && docker compose up -d --build`. The database lives in the `db-data`
-volume and survives rebuilds; back it up with
-`docker compose exec db pg_dump -U phone_blocker phone_blocker > backup.sql`.
+volume and survives rebuilds.
+
+### Admin page
+
+`/admin` shows counts, every import run with its error log, and the latest reports. Search
+for a number to see everything about it, undo reports, or set your own label and
+always/never block. Imported organizations are not edited there, because the next import
+would overwrite the edit; fix a wrong label per number instead.
+
+### Backups
+
+The `backup` service writes a compressed `pg_dump` to `backend/backups/` right after start
+and then daily, keeping the newest 14. Copy that folder off the server too (e.g. with
+`rsync` to another machine); a backup on the same disk doesn't survive losing the server.
+To restore one:
+
+```sh
+docker compose stop api importer
+docker compose exec -T db pg_restore -U phone_blocker -d phone_blocker --clean --if-exists < backups/phone_blocker-YYYYMMDD-HHMM.dump
+docker compose start api importer
+```
 
 Run the tests against PostgreSQL with
 `TEST_DATABASE_URL=postgresql+psycopg://user:pass@host:5432/db uv run pytest` (wipes that database).

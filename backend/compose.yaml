@@ -41,6 +41,31 @@ services:
       api:
         condition: service_healthy  # the api container runs the migrations
 
+  # Daily compressed pg_dump into ./backups on the host, keeping the newest 14.
+  backup:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ./backups:/backups
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        while true; do
+          file=/backups/phone_blocker-$$(date -u +%Y%m%d-%H%M).dump
+          if pg_dump -h db -U phone_blocker -d phone_blocker -Fc -f "$$file.partial"; then
+            mv "$$file.partial" "$$file" && echo "backup: wrote $$file"
+            ls -1t /backups/*.dump | tail -n +15 | xargs -r rm --
+          else
+            rm -f "$$file.partial"; echo "backup: pg_dump failed"
+          fi
+          sleep 86400
+        done
+    depends_on:
+      db:
+        condition: service_healthy
+
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped

@@ -5,14 +5,18 @@ from datetime import datetime
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query
+from fastapi.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel, Field
-from sqlalchemy import and_, or_, select
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy import or_, select
+from sqlalchemy.orm import Session
 
 from .config import Settings
 from .db import make_sessionmaker
-from .directory import REPORT_CATEGORIES, SAFE, find_range, fold, get_or_create_phone, refresh_number
-from .models import Listing, Organization, PhoneNumber, Report
+from .directory import (
+    REPORT_CATEGORIES, SAFE, delete_report, find_range, get_or_create_phone, refresh_number, search_organizations,
+    set_personal,
+)
+from .models import Organization, PhoneNumber, Report
 from .phone import InvalidNumber, describe, format_international, normalize
 from .sources.uke import FIRST_RESERVE_ID
 
@@ -138,6 +142,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     SessionDep = Annotated[Session, Depends(get_session)]
     app = FastAPI(title="Phone Blocker API", version="0.1.0")
+    # The full directory download grows to megabytes of JSON; gzip shrinks it several times.
+    app.add_middleware(GZipMiddleware, minimum_size=1000)
     v1 = APIRouter(prefix="/v1", dependencies=[Depends(require_token)])
 
     @app.get("/health")
@@ -160,23 +166,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return number_out(session, phone)
 
     @v1.delete("/reports/{report_id}", status_code=204)
-    def delete_report(report_id: int, session: SessionDep) -> None:
+    def remove_report(report_id: int, session: SessionDep) -> None:
         """Undo a report, e.g. one made by mistake."""
         report = session.get(Report, report_id)
         if report is None:
             raise HTTPException(404, "Report not found")
-        phone = report.phone_number
-        session.delete(report)
-        refresh_number(session, phone, settings.block_threshold)
+        delete_report(session, report, settings.block_threshold)
         session.commit()
 
     @v1.put("/numbers/{number}/personal", response_model=NumberOut)
-    def set_personal(number: str, body: Personal, session: SessionDep) -> NumberOut:
+    def update_personal(number: str, body: Personal, session: SessionDep) -> NumberOut:
         """Always block or never block a number, and/or give it your own label. Send nulls to clear."""
         phone = get_or_create_phone(session, parse_number(number))
-        phone.personal_action = body.action
-        phone.personal_label = (body.label or "").strip() or None
-        refresh_number(session, phone, settings.block_threshold)
+        set_personal(session, phone, body.action, body.label, settings.block_threshold)
         session.commit()
         return number_out(session, phone)
 
@@ -195,20 +197,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         ]
 
     @v1.get("/organizations", response_model=list[OrganizationOut])
-    def search_organizations(
+    def find_organizations(
         session: SessionDep,
         q: Annotated[str, Query(min_length=2, description="Words to match in name or city")],
         limit: Annotated[int, Query(ge=1, le=200)] = 50,
     ) -> list[OrganizationOut]:
-        words = fold(q).split()
-        orgs = session.scalars(
-            select(Organization)
-            .where(and_(*(Organization.search_text.contains(w, autoescape=True) for w in words)))
-            .options(selectinload(Organization.listings).selectinload(Listing.phone_number))
-            .order_by(Organization.name)
-            .limit(limit)
-        )
-        return [organization_out(o) for o in orgs]
+        return [organization_out(o) for o in search_organizations(session, q, limit)]
 
     @v1.get("/directory", response_model=DirectoryPage)
     def directory_changes(
@@ -233,6 +227,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
 
     app.include_router(v1)
+    from .admin import admin_router  # imports number_out from this module
+
+    app.include_router(admin_router(sessions, settings))
     return app
 
 

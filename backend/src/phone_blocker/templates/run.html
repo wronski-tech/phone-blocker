@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% from "_macros.html" import status, duration %}
+{% block title %}Import run {{ run.id }}{% endblock %}
+{% block content %}
+<h1>Import run {{ run.id }}: {{ run.source }} {{ status(run) }}</h1>
+<div class="card">
+  <dl>
+    <dt>Started (UTC)</dt><dd>{{ run.started_at.strftime('%Y-%m-%d %H:%M:%S') }}</dd>
+    <dt>Duration</dt><dd>{{ duration(run) }}</dd>
+    <dt>Saved</dt><dd>{{ run.saved }}</dd>
+    <dt>Removed</dt><dd>{{ run.removed }}</dd>
+    <dt>Errors</dt><dd>{{ run.errors }}</dd>
+    <dt>Message</dt><dd>{{ run.message or '—' }}</dd>
+  </dl>
+</div>
+<h2>Error log</h2>
+{% if run.error_log %}<pre>{{ run.error_log }}</pre>{% else %}<p class="muted">No errors.</p>{% endif %}
+{% endblock %}

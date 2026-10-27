@@ -20,18 +20,24 @@ import httpx
 USER_AGENT = "phone-blocker/0.1 (personal public phone directory)"
 
 
+MAX_LOGGED_ERRORS = 200
+
+
 @dataclass
 class ImportContext:
     delay: float
     log: Callable[[str], None] = print
     fresh_ids: set[str] = field(default_factory=set)
-    errors: int = 0
+    errors: list[str] = field(default_factory=list)  # first MAX_LOGGED_ERRORS, kept on the run
+    error_count: int = 0
 
     def is_fresh(self, source_id: str) -> bool:
         return source_id in self.fresh_ids
 
     def error(self, message: str) -> None:
-        self.errors += 1
+        self.error_count += 1
+        if len(self.errors) < MAX_LOGGED_ERRORS:
+            self.errors.append(message)
         self.log(message)
 
 

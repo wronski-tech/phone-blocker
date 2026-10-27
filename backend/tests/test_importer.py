@@ -62,6 +62,7 @@ def test_partial_and_failed_runs_remove_nothing(sessions, monkeypatch):
     assert (limited.status, limited.removed) == ("success", 0)
     assert (failed.status, failed.saved, failed.removed) == ("failed", 1, 0)
     assert failed.message == "RuntimeError: API down"
+    assert "Traceback" in failed.error_log and "RuntimeError: API down" in failed.error_log
     assert org_ids(sessions) == ["org-1", "org-2", "org-3"]
 
 

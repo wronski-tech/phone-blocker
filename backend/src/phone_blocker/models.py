@@ -134,6 +134,7 @@ class ImportRun(Base):
     removed: Mapped[int] = mapped_column(default=0)
     errors: Mapped[int] = mapped_column(default=0)
     message: Mapped[str | None] = mapped_column(Text)
+    error_log: Mapped[str | None] = mapped_column(Text)  # per-entry errors and tracebacks, capped
 
 
 class SyncState(Base):

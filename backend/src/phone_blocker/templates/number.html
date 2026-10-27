@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}{{ n.formatted }}{% endblock %}
+{% block content %}
+<h1>{{ n.formatted }}
+  {% if n.blocked %}<span class="badge blocked">blocked</span>{% endif %}
+  {% if n.personal.action == 'allow' %}<span class="badge allowed">allowed</span>{% endif %}
+</h1>
+
+<div class="card">
+  <dl>
+    <dt>Caller ID label</dt><dd>{{ n.label or '—' }}</dd>
+    <dt>Type</dt><dd>{{ n.info.type.replace('_', ' ') }}{% if n.info.region %}, {{ n.info.region }}{% endif %}</dd>
+    <dt>Assigned operator</dt><dd>{{ n.info.operator or '—' }}{% if n.info.service %} <span class="muted">· {{ n.info.service }}</span>{% endif %}</dd>
+    {% if n.info.allocated == false %}<dt>UKE</dt><dd class="failed">Range not assigned to any operator: the caller ID is probably spoofed</dd>{% endif %}
+  </dl>
+</div>
+
+<h2>Personal settings</h2>
+<div class="card">
+  <form method="post" action="/admin/numbers/{{ n.number }}/personal" class="row">
+    <select name="action" aria-label="Action">
+      <option value="" {{ 'selected' if not n.personal.action }}>Automatic</option>
+      <option value="block" {{ 'selected' if n.personal.action == 'block' }}>Always block</option>
+      <option value="allow" {{ 'selected' if n.personal.action == 'allow' }}>Never block</option>
+    </select>
+    <input type="text" name="label" maxlength="200" placeholder="Your label (optional)" value="{{ n.personal.label or '' }}" aria-label="Label" size="36">
+    <button>Save</button>
+  </form>
+  <p class="muted" style="margin:8px 0 0">These beat public listings and reports, and imports never overwrite them.</p>
+</div>
+
+<h2>Listed by</h2>
+{% if n.listings %}
+<table>
+  <thead><tr><th>Organization</th><th>Department</th><th>Address</th><th>Source</th></tr></thead>
+  <tbody>
+  {% for l in n.listings %}
+    <tr>
+      <td>{{ l.organization.name }}{% if l.kind == 'fax' %} <span class="muted">(fax)</span>{% endif %}</td>
+      <td>{{ l.department or '' }}</td>
+      <td>{{ [l.organization.street, l.organization.city] | select | join(", ") }}</td>
+      <td>{% if l.organization.source_id.startswith('http') %}<a href="{{ l.organization.source_id }}" rel="noreferrer">{{ l.organization.source }}</a>{% else %}{{ l.organization.source }}{% endif %}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}<p class="muted">Not in the public directory.</p>{% endif %}
+
+<h2>Reports <span class="muted" style="font-weight:normal">{{ n.reports.spam }} spam · {{ n.reports.safe }} safe</span></h2>
+{% if n.reports.recent %}
+<table>
+  <thead><tr><th>When (UTC)</th><th>Category</th><th>Comment</th><th></th></tr></thead>
+  <tbody>
+  {% for r in n.reports.recent %}
+    <tr>
+      <td class="muted nowrap">{{ r.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+      <td>{{ categories.get(r.category, r.category) }}</td>
+      <td>{{ r.comment or '' }}</td>
+      <td><form method="post" action="/admin/reports/{{ r.id }}/delete"><input type="hidden" name="back" value="/admin/numbers/{{ n.number }}"><button class="danger" title="Undo this report">Delete</button></form></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}<p class="muted">No reports.</p>{% endif %}
+{% endblock %}

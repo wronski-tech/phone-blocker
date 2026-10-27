@@ -1,0 +1,25 @@
+{% macro reports_table(reports, back) %}
+<table>
+  <thead><tr><th>When (UTC)</th><th>Number</th><th>Category</th><th>Comment</th><th>Number now</th><th></th></tr></thead>
+  <tbody>
+  {% for r in reports %}
+    <tr>
+      <td class="muted nowrap">{{ r.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+      <td class="nowrap"><a href="/admin/numbers/{{ r.phone_number.number }}">{{ r.phone_number.number | phone }}</a></td>
+      <td>{{ categories.get(r.category, r.category) }}</td>
+      <td>{{ r.comment or '' }}</td>
+      <td>{% if r.phone_number.blocked %}<span class="badge blocked">blocked</span>{% endif %} {{ r.phone_number.label or '' }}</td>
+      <td><form method="post" action="/admin/reports/{{ r.id }}/delete"><input type="hidden" name="back" value="{{ back }}"><button class="danger" title="Undo this report">Delete</button></form></td>
+    </tr>
+  {% else %}
+    <tr><td colspan="6" class="muted">No reports yet.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endmacro %}
+
+{% macro status(run) %}<span class="badge {{ run.status }}">{{ run.status }}</span>{% endmacro %}
+
+{% macro duration(run) -%}
+{% if run.finished_at %}{% set s = (run.finished_at - run.started_at).total_seconds() | int %}{% if s >= 3600 %}{{ s // 3600 }} h {{ s % 3600 // 60 }} min{% elif s >= 60 %}{{ s // 60 }} min{% else %}{{ s }} s{% endif %}{% else %}…{% endif %}
+{%- endmacro %}
