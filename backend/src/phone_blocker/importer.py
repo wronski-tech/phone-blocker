@@ -12,12 +12,14 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from .directory import delete_organization, save_record
 from .models import ImportRun, Organization, SourceState, utcnow
-from .sources import USER_AGENT, ImportContext, bip, ceidg, nfz, uke
+from .sources import USER_AGENT, ImportContext, apteki, bip, ceidg, nfz, rpwdl, uke
 
-SOURCES: dict[str, ModuleType] = {"uke": uke, "bip": bip, "nfz": nfz, "ceidg": ceidg}
+SOURCES: dict[str, ModuleType] = {
+    "uke": uke, "bip": bip, "nfz": nfz, "rpwdl": rpwdl, "apteki": apteki, "ceidg": ceidg,
+}
 # What `import all` runs. CEIDG needs a token and days for its first import, so it runs
 # in its own container (see compose.yaml).
-DEFAULT_SOURCES = ["uke", "bip", "nfz"]
+DEFAULT_SOURCES = ["uke", "bip", "nfz", "rpwdl", "apteki"]
 
 # A complete run normally drops a handful of entries. If a source suddenly lists far fewer
 # (an upstream outage or format change), keep everything rather than wipe the directory.

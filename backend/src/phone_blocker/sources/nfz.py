@@ -13,7 +13,7 @@ import phonenumbers
 
 from ..directory import ListedPhone, OrganizationRecord
 from ..phone import REGION, to_int
-from . import ImportContext, fetch
+from . import ImportContext, fetch, shorten_name
 
 QUEUES_URL = "https://api.nfz.gov.pl/app-itl-api/queues"
 PAGE_SIZE = 25  # the API's maximum
@@ -23,12 +23,6 @@ PROVINCES = {
     "05": "Łódzkie", "06": "Małopolskie", "07": "Mazowieckie", "08": "Opolskie",
     "09": "Podkarpackie", "10": "Podlaskie", "11": "Pomorskie", "12": "Śląskie",
     "13": "Świętokrzyskie", "14": "Warmińsko-mazurskie", "15": "Wielkopolskie", "16": "Zachodniopomorskie",
-}
-ABBREVIATIONS = {
-    "SAMODZIELNY PUBLICZNY ZAKŁAD OPIEKI ZDROWOTNEJ": "SP ZOZ",
-    "NIEPUBLICZNY ZAKŁAD OPIEKI ZDROWOTNEJ": "NZOZ",
-    "SPÓŁKA Z OGRANICZONĄ ODPOWIEDZIALNOŚCIĄ": "SP. Z O.O.",
-    "SPÓŁKA AKCYJNA": "S.A.",
 }
 
 
@@ -41,7 +35,7 @@ def iter_records(ctx: ImportContext, client: httpx.Client) -> Iterator[tuple[str
             if record is None:
                 record = places[source_id] = OrganizationRecord(
                     source_id=source_id,
-                    name=_shorten(row["provider"].strip()),
+                    name=shorten_name(row["provider"].strip()),
                     street=row.get("address"),
                     city=row.get("locality"),
                     voivodeship=province,
@@ -54,13 +48,6 @@ def iter_records(ctx: ImportContext, client: httpx.Client) -> Iterator[tuple[str
                 record.phones.append(ListedPhone(to_int(match.number), "phone", department))
         ctx.log(f"NFZ {province}: {len(places)} places")
         yield from places.items()
-
-
-def _shorten(name: str) -> str:
-    """Use the usual abbreviations so caller ID shows the distinctive part of the name."""
-    for long, short in ABBREVIATIONS.items():
-        name = name.replace(long, short)
-    return name
 
 
 def _source_id(province: str, row: dict) -> str:

@@ -15,6 +15,7 @@ them. They keep their progress in `ctx.state` and call `ctx.checkpoint()` to sav
 so a run that takes days continues where it stopped.
 """
 
+import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -26,6 +27,13 @@ USER_AGENT = "phone-blocker/0.1 (personal public phone directory)"
 
 
 MAX_LOGGED_ERRORS = 200
+NAME_ABBREVIATIONS = {
+    "SAMODZIELNY PUBLICZNY ZAKŁAD OPIEKI ZDROWOTNEJ": "SP ZOZ",
+    "SAMODZIELNY PUBLICZNY ZESPÓŁ ZAKŁADÓW OPIEKI ZDROWOTNEJ": "SP ZZOZ",
+    "NIEPUBLICZNY ZAKŁAD OPIEKI ZDROWOTNEJ": "NZOZ",
+    "SPÓŁKA Z OGRANICZONĄ ODPOWIEDZIALNOŚCIĄ": "SP. Z O.O.",
+    "SPÓŁKA AKCYJNA": "S.A.",
+}
 
 
 @dataclass
@@ -76,3 +84,10 @@ def fetch(
                 raise
             time.sleep(2 ** attempt * 2)
     raise AssertionError("unreachable")
+
+
+def shorten_name(name: str) -> str:
+    """Use the usual abbreviations, whatever the case, so caller ID shows the distinctive part."""
+    for long, short in NAME_ABBREVIATIONS.items():
+        name = re.sub(re.escape(long), short, name, flags=re.IGNORECASE)
+    return " ".join(name.replace('""', '"').split())

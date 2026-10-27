@@ -1,3 +1,5 @@
+import re
+
 import phonenumbers
 from phonenumbers import geocoder
 
@@ -27,6 +29,22 @@ def normalize(raw: str) -> int:
 
 def to_int(parsed: phonenumbers.PhoneNumber) -> int:
     return int(phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.E164)[1:])
+
+
+# Old Polish style dialled a 0 before the area code: "071 327-02-02", "(0-71) 123 45 67".
+_TRUNK_ZERO = re.compile(r"(?:^|(?<=[\s,;/(]))0-?\s?(?=[1-9]\d)")
+
+
+def find_numbers(text: str) -> list[int]:
+    """Every valid phone number in free text from a register, in order, without duplicates.
+
+    Also reads the old "0 + area code" style, and runs of spaces as separators between numbers.
+    """
+    found: dict[int, None] = {}
+    for variant in (text, re.sub(r"\s{2,}", ", ", _TRUNK_ZERO.sub("", text))):
+        for match in phonenumbers.PhoneNumberMatcher(variant, REGION):
+            found.setdefault(to_int(match.number), None)
+    return list(found)
 
 
 def normalize_prefix(raw: str) -> str:
