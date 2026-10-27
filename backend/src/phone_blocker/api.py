@@ -5,9 +5,11 @@ from datetime import datetime
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query
+from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import or_, select
+from sqlalchemy import or_, select, text
 from sqlalchemy.orm import Session
 
 from .config import Settings
@@ -16,7 +18,9 @@ from .directory import (
     REPORT_CATEGORIES, SAFE, delete_report, find_range, get_or_create_phone, refresh_number, search_organizations,
     set_personal,
 )
+from .importer import DEFAULT_SOURCES
 from .models import Organization, PhoneNumber, Report
+from .monitoring import status
 from .phone import InvalidNumber, describe, format_international, normalize
 from .sources.uke import FIRST_RESERVE_ID
 
@@ -147,8 +151,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     v1 = APIRouter(prefix="/v1", dependencies=[Depends(require_token)])
 
     @app.get("/health")
-    def health() -> dict:
+    def health(session: SessionDep) -> dict:
+        """Liveness for Docker: the app runs and reaches its database."""
+        try:
+            session.execute(text("SELECT 1"))
+        except Exception as exc:
+            raise HTTPException(503, "Database unreachable") from exc
         return {"status": "ok"}
+
+    @app.get("/status")
+    def service_status(session: SessionDep) -> JSONResponse:
+        """For an uptime monitor: 503 unless the database answers, every source imported
+        successfully in the last 3 days, and the newest backup is under 2 days old."""
+        result = status(session, settings, DEFAULT_SOURCES)
+        return JSONResponse(jsonable_encoder(result), status_code=200 if result["ok"] else 503)
 
     @v1.get("/numbers/{number}", response_model=NumberOut)
     def lookup_number(number: str, session: SessionDep) -> NumberOut:

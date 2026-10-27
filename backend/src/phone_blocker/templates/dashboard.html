@@ -3,6 +3,14 @@
 {% block title %}Dashboard{% endblock %}
 {% block content %}
 <h1>Dashboard</h1>
+<div class="card row" aria-label="Health">
+  <b class="{{ 'success' if health.ok else 'failed' }}">{{ 'All checks pass' if health.ok else 'Needs attention' }}</b>
+  {% for name, check in health.checks.items() %}
+    {% set when = check.get('last_success') or check.get('newest') %}
+    <span style="white-space:nowrap"><span class="badge {{ 'success' if check.ok else 'failed' }}">{{ '✓' if check.ok else '✗' }} {{ name }}</span>
+      {% if when %}<span class="muted">{{ when.strftime('%Y-%m-%d %H:%M') }}</span>{% elif name != 'database' %}<span class="muted">never</span>{% endif %}</span>
+  {% endfor %}
+</div>
 <div class="stats">
   {% for name, value in stats.items() %}<div class="stat"><b>{{ "{:,}".format(value or 0).replace(",", " ") }}</b><span>{{ name }}</span></div>{% endfor %}
   {% for source, n in sources %}<div class="stat"><b>{{ "{:,}".format(n).replace(",", " ") }}</b><span>Organizations from {{ source }}</span></div>{% endfor %}

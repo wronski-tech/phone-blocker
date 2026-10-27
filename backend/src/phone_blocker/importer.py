@@ -33,8 +33,9 @@ def run_import(
     max_age: timedelta = timedelta(days=7),
     delay: float | None = None,
     log: Callable[[str], None] = print,
+    alert: Callable[[str, str], None] = lambda title, message: None,
 ) -> ImportRun:
-    """Import one source. Never raises: failures are logged and recorded on the run."""
+    """Import one source. Never raises: failures are logged, recorded on the run, and alerted."""
     module = SOURCES[source]
     with sessions.begin() as session:
         run = ImportRun(source=source, status="running", saved=0, removed=0, errors=0)
@@ -71,6 +72,9 @@ def run_import(
         session.merge(run)
     log(f"{source}: {run.status}, saved {run.saved}, removed {run.removed}, errors {run.errors}"
         + (f" ({run.message})" if run.message else ""))
+    if run.status == "failed" or (run.message or "").startswith("Refused"):
+        alert(f"Import {source} {'failed' if run.status == 'failed' else 'needs a look'}",
+              f"{run.message}\nRun {run.id}: saved {run.saved}, removed {run.removed}, errors {run.errors}")
     return run
 
 

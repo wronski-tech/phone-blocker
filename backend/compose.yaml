@@ -23,6 +23,9 @@ services:
       DATABASE_URL: postgresql+psycopg://phone_blocker:${POSTGRES_PASSWORD}@db:5432/phone_blocker
       API_TOKEN: ${API_TOKEN:?set API_TOKEN in .env}
       BLOCK_THRESHOLD: ${BLOCK_THRESHOLD:-1}
+      BACKUP_DIR: /backups  # /status checks the newest dump
+    volumes:
+      - ./backups:/backups:ro
     depends_on:
       db:
         condition: service_healthy
@@ -35,6 +38,8 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://phone_blocker:${POSTGRES_PASSWORD}@db:5432/phone_blocker
       BLOCK_THRESHOLD: ${BLOCK_THRESHOLD:-1}
+      NTFY_URL: ${NTFY_URL:-}
+      NTFY_TOKEN: ${NTFY_TOKEN:-}
     healthcheck:
       disable: true  # the image's check probes the API port
     depends_on:
@@ -52,6 +57,8 @@ services:
       DATABASE_URL: postgresql+psycopg://phone_blocker:${POSTGRES_PASSWORD}@db:5432/phone_blocker
       BLOCK_THRESHOLD: ${BLOCK_THRESHOLD:-1}
       CEIDG_TOKEN: ${CEIDG_TOKEN:-}  # the import fails with a clear message when unset
+      NTFY_URL: ${NTFY_URL:-}
+      NTFY_TOKEN: ${NTFY_TOKEN:-}
     healthcheck:
       disable: true
     depends_on:
@@ -64,6 +71,8 @@ services:
     restart: unless-stopped
     environment:
       PGPASSWORD: ${POSTGRES_PASSWORD}
+      NTFY_URL: ${NTFY_URL:-}
+      NTFY_TOKEN: ${NTFY_TOKEN:-}
     volumes:
       - ./backups:/backups
     entrypoint: ["sh", "-c"]
@@ -76,6 +85,13 @@ services:
             ls -1t /backups/*.dump | tail -n +15 | xargs -r rm --
           else
             rm -f "$$file.partial"; echo "backup: pg_dump failed"
+            if [ -n "$$NTFY_URL" ]; then
+              set --
+              [ -n "$$NTFY_TOKEN" ] && set -- --header "Authorization: Bearer $$NTFY_TOKEN"
+              wget -q -O /dev/null --header "Title: Backup failed" --header "Priority: high" --header "Tags: warning" "$$@" \
+                --post-data "pg_dump of the phone-blocker database failed; see docker compose logs backup" "$$NTFY_URL" \
+                || echo "backup: alert not sent"
+            fi
           fi
           sleep 86400
         done

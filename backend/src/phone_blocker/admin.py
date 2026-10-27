@@ -21,7 +21,9 @@ from sqlalchemy.orm import Session, joinedload, sessionmaker
 from .api import number_out
 from .config import Settings
 from .directory import SPAM_CATEGORIES, delete_report, get_or_create_phone, search_organizations, set_personal
+from .importer import DEFAULT_SOURCES
 from .models import ImportRun, NumberRange, Organization, PhoneNumber, Report, SyncState, utcnow
+from .monitoring import status
 from .phone import InvalidNumber, format_international, normalize
 
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
@@ -75,7 +77,7 @@ def admin_router(sessions: sessionmaker[Session], settings: Settings) -> APIRout
         ).all()
         runs = session.scalars(select(ImportRun).order_by(ImportRun.id.desc()).limit(30)).all()
         return page(request, "dashboard.html", stats=stats, sources=sources, runs=runs,
-                    reports=_recent_reports(session, 10))
+                    reports=_recent_reports(session, 10), health=status(session, settings, DEFAULT_SOURCES))
 
     @router.get("/runs/{run_id}", response_class=HTMLResponse)
     def run_detail(request: Request, run_id: int, session: SessionDep):

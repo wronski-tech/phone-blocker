@@ -120,6 +120,22 @@ docker compose exec -T db pg_restore -U phone_blocker -d phone_blocker --clean -
 docker compose start api importer
 ```
 
+### Monitoring
+
+- **Alerts on your phone.** Install the [ntfy](https://ntfy.sh) app, subscribe to a topic
+  name nobody can guess (e.g. `phone-blocker-<random>`), and set
+  `NTFY_URL=https://ntfy.sh/<topic>` in `.env` (plus `NTFY_TOKEN` for a protected or
+  self-hosted server). A failed import, an import that refused to delete most of a source's
+  numbers, and a failed backup each send a push notification.
+- **`/status`** returns 200 when everything is fine and 503 otherwise, with one check each
+  for the database, every source in `import all` (last success under 3 days ago) and the
+  newest backup (under 2 days old). The admin dashboard shows the same checks.
+  `/health` only checks the API and database; it is the API container's Docker health check.
+- **Server down.** Nothing on the server can report that it is down, so point a free
+  external monitor (UptimeRobot, Better Stack, healthchecks.io, …) at
+  `https://<DOMAIN>/status`. It then alerts you when the server is unreachable and when any
+  check fails.
+
 Run the tests against PostgreSQL with
 `TEST_DATABASE_URL=postgresql+psycopg://user:pass@host:5432/db uv run pytest` (wipes that database).
 

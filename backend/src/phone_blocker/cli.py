@@ -2,6 +2,7 @@ import argparse
 import logging
 import time
 from datetime import timedelta
+from functools import partial
 
 import httpx
 from sqlalchemy import select
@@ -11,6 +12,7 @@ from .db import make_sessionmaker, migrate
 from .directory import save_record
 from .importer import DEFAULT_SOURCES, SOURCES, run_import
 from .models import ImportRun
+from .monitoring import send_alert
 from .sources import USER_AGENT, bip
 
 
@@ -47,7 +49,8 @@ def main() -> None:
         while True:
             for source in sources:
                 run_import(sessions, source, settings.block_threshold, limit=args.limit,
-                           max_age=timedelta(days=args.max_age_days), delay=args.delay)
+                           max_age=timedelta(days=args.max_age_days), delay=args.delay,
+                           alert=partial(send_alert, settings))
             if not args.every_hours:
                 break
             print(f"Next import in {args.every_hours} h", flush=True)
