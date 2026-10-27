@@ -41,6 +41,23 @@ services:
       api:
         condition: service_healthy  # the api container runs the migrations
 
+  # Sole traders from CEIDG. Starts only with CEIDG_TOKEN and COMPOSE_PROFILES=ceidg in .env.
+  # The first import takes days and continues after restarts; then it follows daily changes.
+  ceidg:
+    build: .
+    profiles: ["ceidg"]
+    restart: unless-stopped
+    command: phone-blocker import ceidg --every-hours 24
+    environment:
+      DATABASE_URL: postgresql+psycopg://phone_blocker:${POSTGRES_PASSWORD}@db:5432/phone_blocker
+      BLOCK_THRESHOLD: ${BLOCK_THRESHOLD:-1}
+      CEIDG_TOKEN: ${CEIDG_TOKEN:-}  # the import fails with a clear message when unset
+    healthcheck:
+      disable: true
+    depends_on:
+      api:
+        condition: service_healthy
+
   # Daily compressed pg_dump into ./backups on the host, keeping the newest 14.
   backup:
     image: postgres:17-alpine

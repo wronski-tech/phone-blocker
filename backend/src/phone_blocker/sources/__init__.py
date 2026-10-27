@@ -8,6 +8,11 @@ importer removes entries whose id was not seen.
 
 Reference data that is simply replaced on every run (UKE number ranges) provides
 `replace_all(session, client, ctx)` instead, returning the number of rows written.
+
+Incremental sources (CEIDG) set `INCREMENTAL = True`. Their `iter_records` yields only
+what changed, with `record` None meaning "remove this entry", so no cleanup runs after
+them. They keep their progress in `ctx.state` and call `ctx.checkpoint()` to save it,
+so a run that takes days continues where it stopped.
 """
 
 import time
@@ -30,6 +35,8 @@ class ImportContext:
     fresh_ids: set[str] = field(default_factory=set)
     errors: list[str] = field(default_factory=list)  # first MAX_LOGGED_ERRORS, kept on the run
     error_count: int = 0
+    state: dict = field(default_factory=dict)  # incremental sources: progress kept between runs
+    checkpoint: Callable[[], None] = lambda: None  # saves `state`
 
     def is_fresh(self, source_id: str) -> bool:
         return source_id in self.fresh_ids

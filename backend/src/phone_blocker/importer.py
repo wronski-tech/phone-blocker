@@ -1,5 +1,6 @@
 """Runs directory sources, records each run, and removes entries a source no longer lists."""
 
+import json
 import traceback
 from collections.abc import Callable
 from datetime import timedelta
@@ -10,10 +11,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from .directory import delete_organization, save_record
-from .models import ImportRun, Organization, utcnow
-from .sources import USER_AGENT, ImportContext, bip, nfz, uke
+from .models import ImportRun, Organization, SourceState, utcnow
+from .sources import USER_AGENT, ImportContext, bip, ceidg, nfz, uke
 
-SOURCES: dict[str, ModuleType] = {"uke": uke, "bip": bip, "nfz": nfz}
+SOURCES: dict[str, ModuleType] = {"uke": uke, "bip": bip, "nfz": nfz, "ceidg": ceidg}
+# What `import all` runs. CEIDG needs a token and days for its first import, so it runs
+# in its own container (see compose.yaml).
+DEFAULT_SOURCES = ["uke", "bip", "nfz"]
 
 # A complete run normally drops a handful of entries. If a source suddenly lists far fewer
 # (an upstream outage or format change), keep everything rather than wipe the directory.
@@ -38,7 +42,10 @@ def run_import(
         fresh = set(session.scalars(select(Organization.source_id).where(
             Organization.source == source, Organization.fetched_at >= utcnow() - max_age,
         )))
-    ctx = ImportContext(delay=module.DEFAULT_DELAY if delay is None else delay, log=log, fresh_ids=fresh)
+        saved_state = session.get(SourceState, source)
+    ctx = ImportContext(delay=module.DEFAULT_DELAY if delay is None else delay, log=log, fresh_ids=fresh,
+                        state=json.loads(saved_state.state) if saved_state else {})
+    ctx.checkpoint = lambda: _save_state(sessions, source, ctx.state)
     log(f"{source}: import started ({len(fresh)} entries fresh)")
 
     try:
@@ -46,6 +53,8 @@ def run_import(
             if hasattr(module, "replace_all"):  # reference data replaced wholesale, e.g. UKE ranges
                 with sessions.begin() as session:
                     run.saved = module.replace_all(session, client, ctx)
+            elif getattr(module, "INCREMENTAL", False):
+                _import_changes(sessions, source, module, ctx, client, run, block_threshold, limit, log)
             else:
                 _import_records(sessions, source, module, ctx, client, run, block_threshold, limit, log)
         run.status = "success"
@@ -76,13 +85,47 @@ def _import_records(
             continue
         with sessions.begin() as session:
             save_record(session, source, record, block_threshold)
-        run.saved += 1
-        if run.saved % 100 == 0:
-            log(f"{source}: saved {run.saved}")
-        if limit and run.saved >= limit:
+        if _counted(sessions, source, run, limit, log):
             run.message = f"Stopped at --limit {limit}; nothing removed"
             return
     run.removed, run.message = _remove_missing(sessions, source, seen, block_threshold)
+
+
+def _import_changes(
+    sessions: sessionmaker[Session], source: str, module: ModuleType, ctx: ImportContext, client: httpx.Client,
+    run: ImportRun, block_threshold: int, limit: int | None, log: Callable[[str], None],
+) -> None:
+    for source_id, record in module.iter_records(ctx, client):
+        with sessions.begin() as session:
+            if record is not None:
+                save_record(session, source, record, block_threshold)
+            elif org := session.scalar(select(Organization).where(
+                Organization.source == source, Organization.source_id == source_id,
+            )):
+                delete_organization(session, org, block_threshold)
+                run.removed += 1
+            else:
+                continue
+        if record is not None and _counted(sessions, source, run, limit, log):
+            run.message = f"Stopped at --limit {limit}"
+            return
+
+
+def _counted(
+    sessions: sessionmaker[Session], source: str, run: ImportRun, limit: int | None, log: Callable[[str], None]
+) -> bool:
+    """Count a saved entry, show progress on long runs, and say whether --limit is reached."""
+    run.saved += 1
+    if run.saved % 100 == 0:
+        log(f"{source}: saved {run.saved}")
+        with sessions.begin() as session:  # so the admin page shows progress of runs taking hours
+            session.merge(run)
+    return bool(limit and run.saved >= limit)
+
+
+def _save_state(sessions: sessionmaker[Session], source: str, state: dict) -> None:
+    with sessions.begin() as session:
+        session.merge(SourceState(source=source, state=json.dumps(state), updated_at=utcnow()))
 
 
 def _remove_missing(

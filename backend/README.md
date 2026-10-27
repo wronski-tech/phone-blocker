@@ -47,6 +47,14 @@ accepts it (the iOS URL session does), which shrinks the full directory download
 | `bip`  | Public institutions from the BIP register | JSON tree behind gov.pl/web/bip/spis-podmiotow, then each HTML contact card | hours; cards refreshed within `--max-age-days` (7) are skipped |
 | `nfz`  | Clinics and hospital departments with an NFZ contract | Public NFZ "Terminy leczenia" API, grouped per department | about 2 h |
 | `uke`  | Operator of every Polish number range (landline, mobile, VoIP, 70x/80x) | UKE numbering tables, CSV export from numeracja.uke.gov.pl | seconds; replaces the table each run |
+| `ceidg` | Sole traders that published a phone number in CEIDG (optional) | CEIDG API v3 with a free token in `CEIDG_TOKEN`; first import month by month, then the daily change feed | first import: days (1000 requests/h); then minutes |
+
+`import all` runs `uke`, `bip` and `nfz`. CEIDG runs in its own `ceidg` container: get a
+token at [dane.biznes.gov.pl](https://dane.biznes.gov.pl) ("Dane po API") and set
+`CEIDG_TOKEN` and `COMPOSE_PROFILES=ceidg` in `.env`. Its first import covers about
+2.6 million active businesses at the API's limit of 1000 requests per hour, so it takes
+several days; it saves its progress after every month of start dates and continues after
+restarts. After that, each daily run only fetches businesses that changed.
 
 Each run is recorded in `import_runs` (`phone-blocker runs`). After a **complete** run, entries
 the source no longer lists are removed and their numbers lose their label in the next sync.

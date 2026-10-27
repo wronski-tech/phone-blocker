@@ -9,7 +9,7 @@ from sqlalchemy import select
 from .config import Settings
 from .db import make_sessionmaker, migrate
 from .directory import save_record
-from .importer import SOURCES, run_import
+from .importer import DEFAULT_SOURCES, SOURCES, run_import
 from .models import ImportRun
 from .sources import USER_AGENT, bip
 
@@ -21,7 +21,7 @@ def main() -> None:
     commands.add_parser("migrate", help="Create or upgrade the database schema")
 
     imp = commands.add_parser("import", help="Import directory sources")
-    imp.add_argument("sources", nargs="+", choices=[*SOURCES, "all"])
+    imp.add_argument("sources", nargs="+", choices=[*SOURCES, "all"], help=f"all = {' '.join(DEFAULT_SOURCES)}")
     imp.add_argument("--limit", type=int, help="Stop each source after saving this many entries (skips cleanup)")
     imp.add_argument("--delay", type=float, help="Seconds between requests (default depends on the source)")
     imp.add_argument("--max-age-days", type=float, default=7,
@@ -43,7 +43,7 @@ def main() -> None:
     sessions = make_sessionmaker(settings.database_url)
 
     if args.command == "import":
-        sources = list(SOURCES) if "all" in args.sources else args.sources
+        sources = DEFAULT_SOURCES if "all" in args.sources else args.sources
         while True:
             for source in sources:
                 run_import(sessions, source, settings.block_threshold, limit=args.limit,

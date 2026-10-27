@@ -137,6 +137,16 @@ class ImportRun(Base):
     error_log: Mapped[str | None] = mapped_column(Text)  # per-entry errors and tracebacks, capped
 
 
+class SourceState(Base):
+    """Progress an incremental importer keeps between runs (JSON)."""
+
+    __tablename__ = "source_states"
+
+    source: Mapped[str] = mapped_column(String(50), primary_key=True)
+    state: Mapped[str] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
+
+
 class SyncState(Base):
     """Single row holding the last issued sync version.
 
