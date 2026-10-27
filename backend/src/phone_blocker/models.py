@@ -120,6 +120,22 @@ class NumberRange(Base):
     service: Mapped[str | None] = mapped_column(String(300))  # 70x/80x service type
 
 
+class Rule(Base):
+    """Block or allow every number starting with `prefix`, e.g. all of +44 70.
+
+    Rules cover whole ranges, so they are applied when a number is looked up rather than
+    stored per number. The longest matching prefix wins.
+    """
+
+    __tablename__ = "rules"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    prefix: Mapped[str] = mapped_column(String(15), unique=True)  # E.164 digits without '+', e.g. "4470"
+    action: Mapped[str] = mapped_column(String(10))  # "block" or "allow"
+    note: Mapped[str | None] = mapped_column(String(200))  # why; shown as the label of numbers it blocks
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
 class ImportRun(Base):
     """One run of a directory importer, for monitoring and debugging."""
 

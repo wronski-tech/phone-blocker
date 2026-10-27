@@ -63,3 +63,18 @@ def test_search_goes_to_a_number_or_lists_organizations(client, db_url):
     assert client.get("/admin/search", params={"q": "71 777 77 77"}).headers["location"] == "/admin/numbers/48717777777"
     page = client.get("/admin/search", params={"q": "urzad wroclaw"}).text
     assert "Urząd Miejski Wrocławia" in page and "+48 71 777 77 77" in page
+
+
+def test_add_and_delete_a_rule(client):
+    response = client.post("/admin/rules", data={"prefix": "+44 70", "action": "block", "note": "UK personal numbers"},
+                           headers=SAME_ORIGIN)
+    assert (response.status_code, response.headers["location"]) == (303, "/admin/rules")
+    page = client.get("/admin/rules").text
+    assert "+44 70" in page and "UK personal numbers" in page
+
+    invalid = client.post("/admin/rules", data={"prefix": "70", "action": "block"}, headers=SAME_ORIGIN)
+    assert invalid.status_code == 200 and "with its country code" in invalid.text
+
+    rule_id = api(client, "GET", "/v1/rules").json()[0]["id"]
+    client.post(f"/admin/rules/{rule_id}/delete", headers=SAME_ORIGIN)
+    assert api(client, "GET", "/v1/rules").json() == []

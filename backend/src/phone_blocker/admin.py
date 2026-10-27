@@ -20,14 +20,18 @@ from sqlalchemy.orm import Session, joinedload, sessionmaker
 
 from .api import number_out
 from .config import Settings
-from .directory import SPAM_CATEGORIES, delete_report, get_or_create_phone, search_organizations, set_personal
+from .directory import (
+    SPAM_CATEGORIES, delete_report, get_or_create_phone, save_rule, search_organizations, set_personal,
+)
 from .importer import DEFAULT_SOURCES
-from .models import ImportRun, NumberRange, Organization, PhoneNumber, Report, SyncState, utcnow
+from .models import ImportRun, NumberRange, Organization, PhoneNumber, Report, Rule, SyncState, utcnow
 from .monitoring import status
-from .phone import InvalidNumber, format_international, normalize
+from .phone import InvalidNumber, format_international, format_prefix, normalize, normalize_prefix
+from .sources.uke import FIRST_RESERVE_ID
 
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
 templates.env.filters["phone"] = format_international
+templates.env.filters["prefix"] = format_prefix
 templates.env.globals["categories"] = SPAM_CATEGORIES | {"safe": "Bezpieczny"}
 basic_auth = HTTPBasic(auto_error=False)
 
@@ -126,6 +130,36 @@ def admin_router(sessions: sessionmaker[Session], settings: Settings) -> APIRout
         set_personal(session, phone, action or None, label, settings.block_threshold)
         session.commit()
         return RedirectResponse(f"/admin/numbers/{number}", status_code=303)
+
+    @router.get("/rules", response_class=HTMLResponse)
+    def rules(request: Request, session: SessionDep, error: str | None = None, prefix: str = ""):
+        unassigned = session.scalar(
+            select(func.count()).select_from(NumberRange).where(NumberRange.operator_id >= FIRST_RESERVE_ID))
+        return page(request, "rules.html", rules=session.scalars(select(Rule).order_by(Rule.prefix)).all(),
+                    unassigned=unassigned, error=error, prefix=prefix)
+
+    @router.post("/rules")
+    def add_rule(
+        request: Request,
+        session: SessionDep,
+        prefix: Annotated[str, Form()],
+        action: Annotated[str, Form()],
+        note: Annotated[str, Form(max_length=200)] = "",
+    ):
+        if action not in ("block", "allow"):
+            raise HTTPException(422, "Unknown action")
+        try:
+            save_rule(session, normalize_prefix(prefix), action, note)
+        except InvalidNumber as exc:
+            return rules(request, session, error=str(exc), prefix=prefix)
+        session.commit()
+        return RedirectResponse("/admin/rules", status_code=303)
+
+    @router.post("/rules/{rule_id}/delete")
+    def remove_rule(rule_id: int, session: SessionDep):
+        session.delete(session.get(Rule, rule_id) or _not_found("Rule"))
+        session.commit()
+        return RedirectResponse("/admin/rules", status_code=303)
 
     return router
 

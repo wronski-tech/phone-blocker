@@ -7,7 +7,8 @@ from dataclasses import dataclass, field
 from sqlalchemy import and_, func, select, update
 from sqlalchemy.orm import Session, selectinload
 
-from .models import Listing, NumberRange, Organization, PhoneNumber, Report, SyncState, utcnow
+from .models import Listing, NumberRange, Organization, PhoneNumber, Report, Rule, SyncState, utcnow
+from .phone import format_prefix
 
 
 @dataclass
@@ -51,7 +52,8 @@ SPAM_CATEGORIES = {
 }
 SAFE = "safe"
 REPORT_CATEGORIES = (*SPAM_CATEGORIES, SAFE)
-BLOCK, ALLOW = "block", "allow"  # personal actions
+BLOCK, ALLOW = "block", "allow"  # personal actions and rule actions
+UNASSIGNED_LABEL = "Numer nieprzydzielony (podszywanie?)"
 
 
 def get_or_create_phone(session: Session, number: int) -> PhoneNumber:
@@ -172,6 +174,42 @@ def find_range(session: Session, number: int) -> NumberRange | None:
         select(NumberRange).where(NumberRange.prefix.in_(prefixes))
         .order_by(func.length(NumberRange.prefix).desc()).limit(1)
     )
+
+
+def find_rule(session: Session, number: int) -> Rule | None:
+    """The rule with the longest prefix of `number`."""
+    digits = str(number)
+    return session.scalar(
+        select(Rule).where(Rule.prefix.in_([digits[:i] for i in range(1, len(digits) + 1)]))
+        .order_by(func.length(Rule.prefix).desc()).limit(1)
+    )
+
+
+def save_rule(session: Session, prefix: str, action: str, note: str | None) -> Rule:
+    """Add a rule, or replace the one with the same prefix."""
+    rule = session.scalar(select(Rule).where(Rule.prefix == prefix)) or Rule(prefix=prefix)
+    rule.action = action
+    rule.note = (note or "").strip() or None
+    session.add(rule)
+    session.flush()
+    return rule
+
+
+def caller_id(phone: PhoneNumber, rule: Rule | None, unassigned: bool) -> tuple[str | None, bool]:
+    """Label and blocked for a call, with prefix rules and UKE's unassigned ranges on top of the stored state.
+
+    Personal settings, public listings and an existing block win. Otherwise a block rule
+    blocks, and so does a Polish number from a range UKE assigned to no operator (its caller
+    ID is spoofed), unless an allow rule covers the number. An allow rule does not undo
+    blocks from reports.
+    """
+    if phone.listings or phone.personal_action or phone.blocked:
+        return phone.label, phone.blocked
+    if rule and rule.action == BLOCK:
+        return phone.label or rule.note or f"Reguła {format_prefix(rule.prefix)}", True
+    if unassigned and rule is None:
+        return phone.label or UNASSIGNED_LABEL, True
+    return phone.label, phone.blocked
 
 
 def search_organizations(session: Session, query: str, limit: int) -> list[Organization]:

@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Rules{% endblock %}
+{% block content %}
+<h1>Rules</h1>
+<div class="card">
+  <form method="post" action="/admin/rules" class="row">
+    <input type="text" name="prefix" required placeholder="Prefix, e.g. +44 70" value="{{ prefix }}" aria-label="Prefix" size="18">
+    <select name="action" aria-label="Action">
+      <option value="block">Block</option>
+      <option value="allow">Allow</option>
+    </select>
+    <input type="text" name="note" maxlength="200" placeholder="Note (optional)" aria-label="Note" size="36">
+    <button>Save</button>
+  </form>
+  {% if error %}<p class="failed" style="margin:8px 0 0">{{ error }}</p>{% endif %}
+  <p class="muted" style="margin:8px 0 0">
+    A rule covers every number that starts with its prefix; the longest matching prefix wins.
+    Personal settings and public listings beat rules. Allow exempts a prefix from block rules and
+    from blocking unassigned numbers, but not from spam reports.
+  </p>
+</div>
+
+{% if rules %}
+<table>
+  <thead><tr><th>Prefix</th><th>Action</th><th>Note</th><th>Added (UTC)</th><th></th></tr></thead>
+  <tbody>
+  {% for r in rules %}
+    <tr>
+      <td class="nowrap">{{ r.prefix | prefix }}</td>
+      <td><span class="badge {{ 'blocked' if r.action == 'block' else 'allowed' }}">{{ r.action }}</span></td>
+      <td>{{ r.note or '' }}</td>
+      <td class="muted nowrap">{{ r.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+      <td><form method="post" action="/admin/rules/{{ r.id }}/delete"><button class="danger">Delete</button></form></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}<p class="muted">No rules yet.</p>{% endif %}
+
+<h2>Unassigned numbers</h2>
+<p>
+  Calls from Polish numbers in the {{ "{:,}".format(unassigned).replace(",", " ") }} UKE ranges that no operator holds
+  are blocked as spoofed{% if not unassigned %} (none yet: run the <code>uke</code> import){% endif %}.
+  To turn that off, add an allow rule for <code>+48</code>.
+</p>
+<p class="muted">
+  Rules and unassigned ranges apply when a number is looked up (<code>/v1/numbers</code>, and later Live Caller ID
+  Lookup on the iPhone). They are not in the <code>/v1/directory</code> download, because the iPhone's call
+  directory only takes single numbers; the app gets them from <code>/v1/rules</code>.
+</p>
+{% endblock %}

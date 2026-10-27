@@ -143,16 +143,34 @@ Run the tests against PostgreSQL with
 
 | Endpoint                         | Purpose                                           |
 |----------------------------------|---------------------------------------------------|
-| `GET /v1/numbers/{number}`       | Who is calling: label, blocked, listings, reports, and `info` (type, city, assigned operator, unallocated range) for any number |
+| `GET /v1/numbers/{number}`       | Who is calling: label, blocked (both including rules), the matching rule, listings, reports, and `info` (type, city, assigned operator, unallocated range) for any number |
 | `POST /v1/reports`               | Report a call: `{number, category, comment?}`     |
 | `DELETE /v1/reports/{id}`        | Undo a report                                     |
 | `PUT /v1/numbers/{number}/personal` | Your settings: `{action: "block" \| "allow" \| null, label}`; nulls clear them |
 | `GET /v1/personal`               | Your block list, allow list and personal labels   |
+| `GET /v1/rules`                  | Prefix rules                                      |
+| `POST /v1/rules`                 | Block or allow a prefix: `{prefix: "+44 70", action: "block" \| "allow", note?}`; replaces the rule with that prefix |
+| `DELETE /v1/rules/{id}`          | Delete a rule                                     |
 | `GET /v1/organizations?q=…`      | Search the directory (case and diacritics insensitive) |
 | `GET /v1/directory?since=&limit=`| Sync feed for the Call Directory extension        |
 
 `info` comes from libphonenumber and the UKE tables and is available for every number, but
 only through lookup: the Call Directory extension can only label numbers listed one by one.
+
+### Rules and spoofed numbers
+
+A rule blocks or allows every number starting with a prefix, e.g. `+44 70` (UK personal
+numbers) or `+225` (a whole country); the longest matching prefix wins. Personal settings,
+public listings and blocks from reports beat rules. Calls from Polish numbers in ranges UKE
+assigned to no operator (about 400 million numbers) are blocked as spoofed, labelled
+"Numer nieprzydzielony (podszywanie?)". An allow rule exempts its prefix from block rules
+and from that check, so an allow rule for `+48` turns the check off. Manage rules at
+`/admin/rules` or through the API.
+
+Rules and unassigned ranges cover far too many numbers for the Call Directory extension,
+which only takes single numbers, so they are not in `/v1/directory`. They apply in
+`/v1/numbers` lookups (and so in Live Caller ID Lookup, once the server for it exists); the
+app can fetch `/v1/rules` and add the numbers of small prefixes to its directory itself.
 
 Numbers are accepted in any common format (`71 777 77 77`, `+48717777777`, …) and returned
 as E.164 digits without `+` (`48717777777`), which is the `CXCallDirectoryPhoneNumber` format.

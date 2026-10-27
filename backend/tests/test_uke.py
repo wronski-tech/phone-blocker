@@ -55,3 +55,16 @@ def client(db_url):
 ])
 def test_lookup_describes_any_number(client, number, expected):
     assert client.get(f"/v1/numbers/{number}").json()["info"] == expected
+
+
+def test_unassigned_numbers_are_blocked_unless_an_allow_rule_covers_them(client):
+    def lookup(number):
+        body = client.get(f"/v1/numbers/{number}").json()
+        return body["blocked"], body["label"]
+
+    assert lookup("71 775 55 55") == (True, "Numer nieprzydzielony (podszywanie?)")
+    assert lookup("71 770 55 55") == (False, None)
+    assert lookup("+49 30 1234567") == (False, None)  # not in the UKE tables: unknown, not unassigned
+
+    client.post("/v1/rules", json={"prefix": "+48", "action": "allow", "note": "Trust caller ID"})
+    assert lookup("71 775 55 55") == (False, None)

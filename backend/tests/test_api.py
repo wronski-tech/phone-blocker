@@ -160,3 +160,46 @@ def test_deleting_a_report_undoes_its_effect(client):
     number = client.get(f"/v1/numbers/{SPAMMER}").json()
     assert (number["blocked"], number["label"], number["reports"]["total"]) == (False, None, 0)
     assert client.delete(f"/v1/reports/{report_id}").status_code == 404
+
+
+def test_rules_block_or_allow_prefixes_at_lookup(client, db_url):
+    save_city_hall(db_url)
+    assert client.post("/v1/rules", json={"prefix": "+44", "action": "block"}).status_code == 201
+    allow = client.post("/v1/rules", json={"prefix": "0044 20 7946", "action": "allow", "note": "London office"}).json()
+    client.post("/v1/rules", json={"prefix": "+48 71", "action": "block", "note": "Wrocław spam"})
+
+    def lookup(number):
+        body = client.get(f"/v1/numbers/{number}").json()
+        return body["blocked"], body["label"], body["rule"] and body["rule"]["formatted"]
+
+    # The longest matching prefix wins, in either direction.
+    assert lookup("+44 161 496 0000") == (True, "Reguła +44", "+44")
+    assert lookup("+44 20 7946 0958") == (False, None, "+44 20 7946")
+    assert lookup("71 333 22 11") == (True, "Wrocław spam", "+48 71")
+    # Public listings and personal settings beat rules; numbers outside every rule are untouched.
+    assert lookup(CITY_HALL) == (False, "Urząd Miejski Wrocławia", "+48 71")
+    client.put("/v1/numbers/+44 161 496 0000/personal", json={"action": "allow"})
+    assert lookup("+44 161 496 0000") == (False, None, "+44")
+    assert lookup(SPAMMER) == (False, None, None)
+    # An allow rule doesn't cancel spam reports.
+    client.post("/v1/rules", json={"prefix": "+48 500", "action": "allow"})
+    assert client.post("/v1/reports", json={"number": SPAMMER, "category": "scam"}).json()["blocked"] is True
+
+    # Rules reach the phone through /v1/rules, not as millions of directory entries.
+    assert {e["number"] for e in directory(client)["entries"]} == {CITY_HALL, 48717779061, SPAMMER_INT}
+
+    # Saving a prefix again replaces its rule; deleting it lifts the block.
+    replaced = client.post("/v1/rules", json={"prefix": "+4420 7946", "action": "block"}).json()
+    rules = client.get("/v1/rules").json()
+    assert [(r["formatted"], r["action"], r["note"]) for r in rules] == [
+        ("+44", "block", None), ("+44 20 7946", "block", None), ("+48 500", "allow", None),
+        ("+48 71", "block", "Wrocław spam")]
+    assert replaced["id"] == allow["id"]
+    assert client.delete(f"/v1/rules/{rules[3]['id']}").status_code == 204
+    assert lookup("71 333 22 11") == (False, None, None)
+    assert client.delete(f"/v1/rules/{rules[3]['id']}").status_code == 404
+
+
+@pytest.mark.parametrize("prefix", ["44 70", "+", "+0 22", "+999", "+44 7x", "+48 1234567890123456"])
+def test_rule_prefix_needs_a_country_code(client, prefix):
+    assert client.post("/v1/rules", json={"prefix": prefix, "action": "block"}).status_code == 422

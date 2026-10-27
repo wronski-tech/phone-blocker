@@ -15,13 +15,13 @@ from sqlalchemy.orm import Session
 from .config import Settings
 from .db import make_sessionmaker
 from .directory import (
-    REPORT_CATEGORIES, SAFE, delete_report, find_range, get_or_create_phone, refresh_number, search_organizations,
-    set_personal,
+    REPORT_CATEGORIES, SAFE, caller_id, delete_report, find_range, find_rule, get_or_create_phone, refresh_number,
+    save_rule, search_organizations, set_personal,
 )
 from .importer import DEFAULT_SOURCES
-from .models import Organization, PhoneNumber, Report
+from .models import Organization, PhoneNumber, Report, Rule
 from .monitoring import status
-from .phone import InvalidNumber, describe, format_international, normalize
+from .phone import InvalidNumber, describe, format_international, format_prefix, normalize, normalize_prefix
 from .sources.uke import FIRST_RESERVE_ID
 
 ReportCategory = Literal[REPORT_CATEGORIES]  # type: ignore[valid-type]
@@ -90,11 +90,29 @@ class Personal(BaseModel):
     label: str | None = Field(default=None, max_length=200, description="Your own caller-ID label")
 
 
+class RuleIn(BaseModel):
+    prefix: str = Field(examples=["+44 70"], description="Start of the numbers, with the country code")
+    action: Literal["block", "allow"] = Field(
+        description="block: block every number with this prefix; allow: exempt it from block rules "
+                    "and from blocking unassigned Polish numbers")
+    note: str | None = Field(default=None, max_length=200, description="Why; the label of numbers it blocks")
+
+
+class RuleOut(BaseModel):
+    id: int
+    prefix: str = Field(description="E.164 digits without '+', e.g. 4470")
+    formatted: str
+    action: str
+    note: str | None
+    created_at: datetime
+
+
 class NumberOut(BaseModel):
     number: int
     formatted: str
-    label: str | None
-    blocked: bool
+    label: str | None = Field(description="Caller-ID label, including the effect of rules")
+    blocked: bool = Field(description="Whether to block the call, including the effect of rules")
+    rule: RuleOut | None = Field(description="The rule with the longest prefix of this number")
     personal: Personal
     info: NumberInfo
     listings: list[ListingOut]
@@ -212,6 +230,30 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             for p in phones
         ]
 
+    @v1.get("/rules", response_model=list[RuleOut])
+    def list_rules(session: SessionDep) -> list[RuleOut]:
+        """Prefix rules. They are not part of /v1/directory: the phone fetches them separately."""
+        return [rule_out(r) for r in session.scalars(select(Rule).order_by(Rule.prefix))]
+
+    @v1.post("/rules", response_model=RuleOut, status_code=201)
+    def create_rule(body: RuleIn, session: SessionDep) -> RuleOut:
+        """Block or allow a whole prefix, e.g. +44 70. Replaces the rule with the same prefix."""
+        try:
+            prefix = normalize_prefix(body.prefix)
+        except InvalidNumber as exc:
+            raise HTTPException(422, str(exc)) from exc
+        rule = save_rule(session, prefix, body.action, body.note)
+        session.commit()
+        return rule_out(rule)
+
+    @v1.delete("/rules/{rule_id}", status_code=204)
+    def remove_rule(rule_id: int, session: SessionDep) -> None:
+        rule = session.get(Rule, rule_id)
+        if rule is None:
+            raise HTTPException(404, "Rule not found")
+        session.delete(rule)
+        session.commit()
+
     @v1.get("/organizations", response_model=list[OrganizationOut])
     def find_organizations(
         session: SessionDep,
@@ -226,7 +268,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         since: Annotated[int, Query(ge=0, description="next_since from the previous page; 0 for a full download")] = 0,
         limit: Annotated[int, Query(ge=1, le=50_000)] = 10_000,
     ) -> DirectoryPage:
-        """Entries for the iPhone Call Directory extension, ordered by version.
+        """Entries for the iPhone Call Directory extension, ordered by version. Prefix rules
+        and unassigned ranges are not included: they cover far too many numbers (see /v1/rules).
 
         With since=0 only active entries are returned. With since>0 an entry
         whose label is null and blocked is false means "remove this number".
@@ -255,11 +298,14 @@ def number_out(session: Session, phone: PhoneNumber) -> NumberOut:
     kind, region = describe(phone.number)
     number_range = find_range(session, phone.number)
     assigned = number_range is not None and number_range.operator_id < FIRST_RESERVE_ID
+    rule = find_rule(session, phone.number)
+    label, blocked = caller_id(phone, rule, unassigned=number_range is not None and not assigned)
     return NumberOut(
         number=phone.number,
         formatted=format_international(phone.number),
-        label=phone.label,
-        blocked=phone.blocked,
+        label=label,
+        blocked=blocked,
+        rule=rule_out(rule) if rule else None,
         personal=Personal(action=phone.personal_action, label=phone.personal_label),
         info=NumberInfo(
             type=kind,
@@ -283,6 +329,11 @@ def number_out(session: Session, phone: PhoneNumber) -> NumberOut:
             ],
         ),
     )
+
+
+def rule_out(rule: Rule) -> RuleOut:
+    return RuleOut(id=rule.id, prefix=rule.prefix, formatted=format_prefix(rule.prefix), action=rule.action,
+                   note=rule.note, created_at=rule.created_at)
 
 
 def organization_out(org: Organization) -> OrganizationOut:

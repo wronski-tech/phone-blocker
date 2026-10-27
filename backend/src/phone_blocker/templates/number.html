@@ -11,6 +11,7 @@
     <dt>Caller ID label</dt><dd>{{ n.label or '—' }}</dd>
     <dt>Type</dt><dd>{{ n.info.type.replace('_', ' ') }}{% if n.info.region %}, {{ n.info.region }}{% endif %}</dd>
     <dt>Assigned operator</dt><dd>{{ n.info.operator or '—' }}{% if n.info.service %} <span class="muted">· {{ n.info.service }}</span>{% endif %}</dd>
+    {% if n.rule %}<dt>Rule</dt><dd><a href="/admin/rules">{{ n.rule.formatted }}</a> <span class="badge {{ 'blocked' if n.rule.action == 'block' else 'allowed' }}">{{ n.rule.action }}</span>{% if n.rule.note %} <span class="muted">· {{ n.rule.note }}</span>{% endif %}</dd>{% endif %}
     {% if n.info.allocated == false %}<dt>UKE</dt><dd class="failed">Range not assigned to any operator: the caller ID is probably spoofed</dd>{% endif %}
   </dl>
 </div>
