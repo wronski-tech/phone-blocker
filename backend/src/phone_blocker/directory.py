@@ -51,6 +51,7 @@ SPAM_CATEGORIES = {
 }
 SAFE = "safe"
 REPORT_CATEGORIES = (*SPAM_CATEGORIES, SAFE)
+BLOCK, ALLOW = "block", "allow"  # personal actions
 
 
 def get_or_create_phone(session: Session, number: int) -> PhoneNumber:
@@ -102,7 +103,9 @@ def delete_organization(session: Session, org: Organization, block_threshold: in
 def refresh_number(session: Session, phone: PhoneNumber, block_threshold: int) -> None:
     """Recompute label/blocked and bump the sync version when they change.
 
-    A number published by an organization is never blocked, whatever its reports say.
+    Precedence: the owner's personal settings, then public listings (never blocked,
+    whatever the reports say), then spam reports. A personally allowed number is never
+    blocked and gets no spam label.
     """
     session.flush()
     session.expire(phone, ["listings", "reports"])
@@ -115,6 +118,8 @@ def refresh_number(session: Session, phone: PhoneNumber, block_threshold: int) -
         if best.kind == "fax":
             label += " (faks)"
         blocked = False
+    elif phone.personal_action == ALLOW:
+        label, blocked = None, False
     else:
         spam = [r.category for r in phone.reports if r.category != SAFE]
         safe = len(phone.reports) - len(spam)
@@ -124,6 +129,10 @@ def refresh_number(session: Session, phone: PhoneNumber, block_threshold: int) -
             label = f"Spam: {SPAM_CATEGORIES[top]} ({len(spam)})"
         blocked = len(spam) - safe >= block_threshold
 
+    if phone.personal_label:
+        label = phone.personal_label
+    if phone.personal_action == BLOCK:
+        blocked = True
     label = label[:200] if label else None
     if (label, blocked) != (phone.label, phone.blocked):
         phone.label = label

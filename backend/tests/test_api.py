@@ -112,3 +112,41 @@ def test_lookup_validates_numbers(client):
     assert unknown.status_code == 200
     assert unknown.json()["label"] is None and unknown.json()["listings"] == []
     assert client.get("/v1/numbers/123").status_code == 422
+
+
+def test_personal_block_beats_public_listing_and_clears(client, db_url):
+    save_city_hall(db_url)
+    before = directory(client)["next_since"]
+
+    blocked = client.put(f"/v1/numbers/{CITY_HALL}/personal", json={"action": "block"}).json()
+    assert (blocked["blocked"], blocked["label"]) == (True, "Urząd Miejski Wrocławia")
+    assert directory(client, since=before)["entries"] == [
+        {"number": CITY_HALL, "label": "Urząd Miejski Wrocławia", "blocked": True}]
+
+    cleared = client.put(f"/v1/numbers/{CITY_HALL}/personal", json={"action": None, "label": None}).json()
+    assert cleared["blocked"] is False
+    assert client.get("/v1/personal").json() == []
+
+
+def test_personal_allow_overrides_spam_reports_and_label_shows(client):
+    client.post("/v1/reports", json={"number": SPAMMER, "category": "scam"})
+
+    allowed = client.put(f"/v1/numbers/{SPAMMER}/personal", json={"action": "allow", "label": " Dr Nowak "}).json()
+    assert (allowed["blocked"], allowed["label"]) == (False, "Dr Nowak")
+
+    # Removing only the label keeps the number allowed, without the spam label coming back.
+    allowed = client.put(f"/v1/numbers/{SPAMMER}/personal", json={"action": "allow"}).json()
+    assert (allowed["blocked"], allowed["label"]) == (False, None)
+    assert client.get("/v1/personal").json() == [
+        {"number": SPAMMER_INT, "formatted": "+48 500 100 200", "action": "allow", "label": None}]
+
+
+def test_deleting_a_report_undoes_its_effect(client):
+    report_id = client.post("/v1/reports", json={"number": SPAMMER, "category": "scam"}).json()["reports"]["recent"][0]["id"]
+    assert client.get(f"/v1/numbers/{SPAMMER}").json()["blocked"] is True
+
+    assert client.delete(f"/v1/reports/{report_id}").status_code == 204
+
+    number = client.get(f"/v1/numbers/{SPAMMER}").json()
+    assert (number["blocked"], number["label"], number["reports"]["total"]) == (False, None, 0)
+    assert client.delete(f"/v1/reports/{report_id}").status_code == 404

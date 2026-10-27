@@ -22,7 +22,7 @@ class Base(DeclarativeBase):
 class PhoneNumber(Base):
     """One phone number and its effective caller-ID state.
 
-    `label` and `blocked` are derived from listings and reports by
+    `label` and `blocked` are derived from personal settings, listings and reports by
     `directory.refresh_number`. Every change to them takes a new `version`,
     which is what the iPhone uses for incremental sync.
     """
@@ -35,6 +35,9 @@ class PhoneNumber(Base):
     label: Mapped[str | None] = mapped_column(String(200))
     blocked: Mapped[bool] = mapped_column(default=False)
     version: Mapped[int] = mapped_column(BigInteger, default=0, index=True)
+    # The owner's own settings, which beat listings and reports: "block" or "allow", and a label.
+    personal_action: Mapped[str | None] = mapped_column(String(10))
+    personal_label: Mapped[str | None] = mapped_column(String(200))
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
 
     listings: Mapped[list["Listing"]] = relationship(back_populates="phone_number", order_by="Listing.id")

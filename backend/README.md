@@ -8,6 +8,8 @@ Stores two kinds of phone data and serves them to the iPhone app:
 - **Unwanted calls** – reports (telemarketing, scam, debt collection, …) in the style of
   sprawdzamnumer.pl. A number is blocked once its spam reports minus its "safe" reports reach
   `BLOCK_THRESHOLD`.
+- **Personal settings** – your own block list, allow list and labels, which beat everything
+  else. An allowed number is never blocked and shows no spam label.
 
 Python 3.11+, FastAPI, SQLAlchemy (SQLite by default, PostgreSQL via `DATABASE_URL`), and
 `phonenumbers` (libphonenumber) for normalization.
@@ -95,6 +97,9 @@ Run the tests against PostgreSQL with
 |----------------------------------|---------------------------------------------------|
 | `GET /v1/numbers/{number}`       | Who is calling: label, blocked, listings, reports, and `info` (type, city, assigned operator, unallocated range) for any number |
 | `POST /v1/reports`               | Report a call: `{number, category, comment?}`     |
+| `DELETE /v1/reports/{id}`        | Undo a report                                     |
+| `PUT /v1/numbers/{number}/personal` | Your settings: `{action: "block" \| "allow" \| null, label}`; nulls clear them |
+| `GET /v1/personal`               | Your block list, allow list and personal labels   |
 | `GET /v1/organizations?q=…`      | Search the directory (case and diacritics insensitive) |
 | `GET /v1/directory?since=&limit=`| Sync feed for the Call Directory extension        |
 

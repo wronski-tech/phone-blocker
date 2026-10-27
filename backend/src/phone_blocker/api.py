@@ -51,6 +51,7 @@ class ListingOut(BaseModel):
 
 
 class ReportOut(BaseModel):
+    id: int
     category: str
     comment: str | None
     created_at: datetime
@@ -75,14 +76,26 @@ class NumberInfo(BaseModel):
     )
 
 
+class Personal(BaseModel):
+    action: Literal["block", "allow"] | None = Field(
+        default=None, description="block: always block; allow: never block and hide spam labels")
+    label: str | None = Field(default=None, max_length=200, description="Your own caller-ID label")
+
+
 class NumberOut(BaseModel):
     number: int
     formatted: str
     label: str | None
     blocked: bool
+    personal: Personal
     info: NumberInfo
     listings: list[ListingOut]
     reports: ReportSummary
+
+
+class PersonalEntry(Personal):
+    number: int
+    formatted: str
 
 
 class ReportIn(BaseModel):
@@ -146,6 +159,41 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         session.commit()
         return number_out(session, phone)
 
+    @v1.delete("/reports/{report_id}", status_code=204)
+    def delete_report(report_id: int, session: SessionDep) -> None:
+        """Undo a report, e.g. one made by mistake."""
+        report = session.get(Report, report_id)
+        if report is None:
+            raise HTTPException(404, "Report not found")
+        phone = report.phone_number
+        session.delete(report)
+        refresh_number(session, phone, settings.block_threshold)
+        session.commit()
+
+    @v1.put("/numbers/{number}/personal", response_model=NumberOut)
+    def set_personal(number: str, body: Personal, session: SessionDep) -> NumberOut:
+        """Always block or never block a number, and/or give it your own label. Send nulls to clear."""
+        phone = get_or_create_phone(session, parse_number(number))
+        phone.personal_action = body.action
+        phone.personal_label = (body.label or "").strip() or None
+        refresh_number(session, phone, settings.block_threshold)
+        session.commit()
+        return number_out(session, phone)
+
+    @v1.get("/personal", response_model=list[PersonalEntry])
+    def list_personal(session: SessionDep) -> list[PersonalEntry]:
+        """Your block list, allow list and personal labels."""
+        phones = session.scalars(
+            select(PhoneNumber)
+            .where(or_(PhoneNumber.personal_action.is_not(None), PhoneNumber.personal_label.is_not(None)))
+            .order_by(PhoneNumber.number)
+        )
+        return [
+            PersonalEntry(number=p.number, formatted=format_international(p.number),
+                          action=p.personal_action, label=p.personal_label)
+            for p in phones
+        ]
+
     @v1.get("/organizations", response_model=list[OrganizationOut])
     def search_organizations(
         session: SessionDep,
@@ -199,6 +247,7 @@ def number_out(session: Session, phone: PhoneNumber) -> NumberOut:
         formatted=format_international(phone.number),
         label=phone.label,
         blocked=phone.blocked,
+        personal=Personal(action=phone.personal_action, label=phone.personal_label),
         info=NumberInfo(
             type=kind,
             region=region,
@@ -216,7 +265,7 @@ def number_out(session: Session, phone: PhoneNumber) -> NumberOut:
             safe=safe,
             by_category=dict(spam),
             recent=[
-                ReportOut(category=r.category, comment=r.comment, created_at=r.created_at)
+                ReportOut(id=r.id, category=r.category, comment=r.comment, created_at=r.created_at)
                 for r in reversed(phone.reports[-20:])
             ],
         ),
